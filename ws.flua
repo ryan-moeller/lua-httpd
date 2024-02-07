@@ -1,0 +1,286 @@
+#!/usr/libexec/flua
+-- vim: set et sw=4:
+-- Minimal web server written in Lua
+--
+-- Use with inetd, no other dependencies:
+-- http    stream  tcp     nowait  root    /usr/local/sbin/httpd      httpd
+
+--
+-- Copyright (c) 2016 - 2024 Ryan Moeller <ryan-moeller@att.net>
+--
+-- Permission to use, copy, modify, and distribute this software for any
+-- purpose with or without fee is hereby granted, provided that the above
+-- copyright notice and this permission notice appear in all copies.
+--
+-- THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+-- WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+-- MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+-- ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+-- WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+-- ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+-- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+--
+
+package.path = "/home/ryan/lua-httpd-ws/?.lua;" .. package.path
+package.cpath = "/home/ryan/flualibs/libmd/?.so;" .. package.cpath
+package.cpath = "/home/ryan/flualibs/libroken/?.so;" .. package.cpath
+package.cpath = "/home/ryan/flualibs/libxor/?.so;" .. package.cpath
+
+local b64 = require("roken")
+local bectl = require("bectl")
+local beup = require("beup")
+local httpd = require("httpd")
+local md = require("md")
+local template = require("template")
+local ucl = require("ucl")
+local xor = require("xor")
+
+local function ws_accept(key)
+    local magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    local sha1 = md.sha1_init()
+    sha1:update(key .. magic)
+    local s = sha1:final()
+    return b64.encode(s)
+end
+
+local WS_FL_FIN = 0x8
+
+local WS_OP_TEXT = 0x1
+local WS_OP_BINARY = 0x2
+local WS_OP_CLOSE = 0x8
+local WS_OP_PING = 0x9
+local WS_OP_PONG = 0xA
+
+local function ws_receive(input)
+    local hdr0 = input:read(2)
+    local byte0, byte1 = string.unpack("BB", hdr0)
+    local flags = (byte0 >> 4) & 0xf
+    local opcode = byte0 & 0xf
+    local masked = (byte1 >> 7) & 0x1
+    if not masked then
+        return nil, "invalid ws header"
+    end
+    local len = byte1 & 0x7f
+    if len == 126 then
+        local hdr1 = input:read(2)
+        len = string.unpack(">I2", hdr1)
+    elseif len == 127 then
+        local hdr1 = input:read(8)
+        len = string.unpack(">I8", hdr1)
+    end
+    local hdr2 = input:read(4)
+    local key0, key1, key2, key3, _ = string.unpack("BBBB", hdr2)
+    local key = { key0, key1, key2, key3 }
+    if len == 0 then
+        return nil, len, opcode, flags
+    end
+    local payload = input:read(len)
+    return xor.unmask(payload, key), len, opcode, flags
+end
+
+local function ws_send(output, payload, opcode, flags)
+    local byte0 = (flags << 4) | opcode
+    local len = payload and #payload or 0
+    if len > 0xffff then
+        local byte1 = 127
+        output:write(string.pack(">BBI8", byte0, byte1, len))
+    elseif len > 125 then
+        local byte1 = 126
+        output:write(string.pack(">BBI2", byte0, byte1, len))
+    else
+        local byte1 = len
+        output:write(string.pack("BB", byte0, byte1))
+    end
+    if payload and len > 0 then
+        output:write(payload)
+    end
+    output:flush()
+end
+
+local CMD_STATUS = "status"
+local CMD_BE_LIST = "be_list"
+local CMD_SNAPS_LIST = "snaps_list"
+local CMD_LATEST = "latest"
+local CMD_UPDATE = "update"
+
+local function do_update()
+    local function send_progress(progress, description)
+        ws_send(io.stdout, ucl.to_json({
+            command = CMD_UPDATE,
+            data = {
+                percent = progress * 100,
+                description = description
+            }
+        }), WS_OP_TEXT, WS_FL_FIN)
+    end
+    local ok, err, rc = beup.update(send_progress)
+    if not ok then
+        ws_send(io.stdout, ucl.to_json({
+            command = CMD_UPDATE,
+            data = {
+                error = err,
+                rc = rc
+            }
+        }), WS_OP_TEXT, WS_FL_FIN)
+    end
+end
+
+local function ws_handler(msg)
+    if msg.command == CMD_STATUS then
+        ws_send(io.stdout, ucl.to_json({status="ok"}), WS_OP_TEXT, WS_FL_FIN)
+    elseif msg.command == CMD_BE_LIST then
+        ws_send(io.stdout, ucl.to_json({
+            command = CMD_BE_LIST,
+            data = bectl.list()
+        }), WS_OP_TEXT, WS_FL_FIN)
+    elseif msg.command == CMD_SNAPS_LIST then
+        ws_send(io.stdout, ucl.to_json({
+            command = CMD_SNAPS_LIST,
+            data = beup.snaps_list()
+        }), WS_OP_TEXT, WS_FL_FIN)
+    elseif msg.command == CMD_LATEST then
+        ws_send(io.stdout, ucl.to_json({
+            command = CMD_LATEST,
+            data = beup.latest()
+        }), WS_OP_TEXT, WS_FL_FIN)
+    elseif msg.command == CMD_UPDATE then
+        do_update()
+    else
+        log:write("unhandled message: ", ucl.to_json({msg}), "\n")
+    end
+end
+
+local server = httpd.create_server("/var/log/wsdemo.log")
+
+server:add_route("GET", "^/$", function(request)
+    local body = template.process([[
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>WebSocket Demo</title>
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+          <link rel="stylesheet" href="https://unpkg.com/bulmaswatch/{{theme}}/bulmaswatch.min.css">
+        </head>
+        <body>
+          <div class="columns is-centered">
+            <div class="column is-narrow">
+              <h1 class="title"><span class="has-text-danger">WebSocket</span> Demo</h1>
+              <section class="is-hidden py-4" id="boot-envs-table">
+                <h2 class="subtitle">Boot Environments</h2>
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>BE</th>
+                      <th>Active</th>
+                      <th>Mountpoint</th>
+                      <th>Space</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                </table>
+              </section>
+              <section class="is-hidden py-4" id="snapshots-table">
+                <h2 class="subtitle">Snapshots (Local)</h2>
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Build Date</th>
+                      <th>Revision</th>
+                      <th>Path</th>
+                      <th>BE?</th>
+                    </tr>
+                  </thead>
+                </table>
+              </section>
+              <section class="is-hidden py-4" id="no-updates">
+                <h2 class="subtitle">Updates</h2>
+                <p>The latest snapshot is installed.</p>
+              </section>
+              <section class="is-hidden py-4" id="update-available">
+                <h2 class="subtitle">Updates</h2>
+                <p><em>A new snapshot is available!</em></p>
+                <form action="javascript:update()">
+                  <div class="field">
+                    <label class="label"></label>
+                    <div class="control">
+                      <button class="button is-primary" type="submit" name="latest">
+                        Create Updated Boot Environment
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </section>
+              <section class="is-hidden py-4" id="updating">
+                <h2 class="subtitle">Updating...</h2>
+                <progress class="progress" value="0" max="100">0%</progress>
+                <p>Starting download</p>
+                <article class="message is-danger is-hidden" id="updating-error">
+                    <div class="message-header">
+                      <p>Error <em></em></p>
+                    </div>
+                    <div class="message-body"></div>
+                </article>
+              </section>
+              <script>{(/home/ryan/lua-httpd-ws/scripts/ws.js)}</script>
+            </div>
+          </div>
+        </body>
+      </html>
+    ]], { theme="darkly" })
+    return { status=200, reason="ok", body=body }
+end)
+
+server:add_route("GET", "^/ws$", function(request)
+    log = request.server.log
+    local connection
+    for val in request.headers["connection"].raw:gmatch("([^%s,]+)") do
+        if val == "Upgrade" then
+            connection = val
+            break
+        end
+    end
+    local upgrade = request.headers["upgrade"].raw
+    local key = request.headers["sec-websocket-key"].raw
+    local version = request.headers["sec-websocket-version"].raw
+    if connection ~= "Upgrade" or upgrade ~= "websocket" or version ~= "13" then
+        log:write("bad request\n");
+        return { status=400, reason="Bad Request", body="can't do that" }
+    end
+    local headers = {
+        ["Connection"] = connection,
+        ["Upgrade"] = upgrade,
+        ["Sec-WebSocket-Accept"] = ws_accept(key),
+    }
+    return { headers=headers, status=101, reason="Switching Protocols", body=function()
+        log:write("switching connection to websocket protocol\n")
+        local buf = ""
+        repeat
+            local payload, len, opcode, flags = ws_receive(io.stdin)
+            if opcode == WS_OP_CLOSE then
+                break
+            elseif opcode == WS_OP_PING then
+                ws_send(io.stdout, payload, WS_OP_PONG, WS_FL_FIN)
+            elseif opcode == WS_OP_TEXT then
+                buf = buf .. payload
+                if flags & WS_FL_FIN then
+                    local parser = ucl.parser()
+                    local ok, err = parser:parse_string(buf, "json")
+                    buf = ""
+                    if not ok then
+                        log:write("parser error: ", err, "\n")
+                        ws_send(io.stdout, "internal server error", WS_OP_CLOSE, WS_FL_FIN)
+                        break
+                    end
+                    local msg = parser:get_object()
+                    ws_handler(msg)
+                end
+            else
+                log:write("unhandled op: ", opcode, "\n")
+            end
+        until false
+    end}
+end)
+
+server:run(true)

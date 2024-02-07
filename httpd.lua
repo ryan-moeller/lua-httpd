@@ -5,7 +5,7 @@
 -- http    stream  tcp     nowait  www    /usr/local/sbin/httpd      httpd
 
 --
--- Copyright (c) 2016 - 2020 Ryan Moeller <ryan@freqlabs.com>
+-- Copyright (c) 2016 - 2024 Ryan Moeller <ryan-moeller@att.net>
 --
 -- Permission to use, copy, modify, and distribute this software for any
 -- purpose with or without fee is hereby granted, provided that the above
@@ -299,14 +299,15 @@ end
 
 
 local function parse_header_value(header, value)
+   header.raw = value
+
    local function parse(attrib)
+      table.insert(header.list, attrib)
       local key, value = string.match(attrib, "^%s*(.*)=(.*)%s*$")
       if key then
          local attrval = header.dict[key] or {}
          table.insert(attrval, value)
          header.dict[key] = attrval
-      else
-         table.insert(header.list, attrib)
       end
    end
 
