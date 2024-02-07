@@ -1,0 +1,94 @@
+#!/usr/libexec/flua
+-- vim: set et:
+-- Minimal web server written in Lua
+--
+-- Use with inetd, no other dependencies:
+-- http    stream  tcp     nowait  root    /usr/local/sbin/httpd      httpd
+
+--
+-- Copyright (c) 2016 - 2023 Ryan Moeller <ryan@freqlabs.com>
+--
+-- Permission to use, copy, modify, and distribute this software for any
+-- purpose with or without fee is hereby granted, provided that the above
+-- copyright notice and this permission notice appear in all copies.
+--
+-- THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+-- WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+-- MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+-- ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+-- WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+-- ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+-- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+--
+
+package.path = "/home/ryan/lua-httpd/?.lua;/home/ryan/lua-httpd/plugins/?.lua;" .. package.path
+
+local httpd = require("httpd")
+local template = require("template")
+
+local theme = "darkly"
+local plugins = {"klds", "ps", "exports", "zpools", "datasets", "pkgs", "modules"}
+
+local function monitor(request)
+    local tables = {}
+    for _, name in ipairs(plugins) do
+        local ctx = require(name)
+        table.insert(tables, template.process([[
+        <h2 class="subtitle">{{title}}</h2>
+        <table class="table">
+          <thead>
+            <tr>
+            {% for _, field in ipairs(cols) do %}
+              <th>
+              {% if #field[1] == #field[2] then %}
+                {{field[2]}}
+              {% else %}
+                <abbr title="{{field[1]}}">{{field[2]}}</abbr>
+              {% end %}
+              </th>  
+            {% end %}
+            </tr>
+          </thead>
+          <tbody>
+          {% for _, row in ipairs(rows()) do %}
+            <tr>
+            {% for _, field in ipairs(cols) do %}
+              <td>{{row[(field[1])]}}</td>
+            {% end %}
+            </tr>
+          {% end %}
+          </tbody>
+        </table>
+]], ctx))
+    end
+    local body = template.process([[
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FreeBSD Monitor</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/bulmaswatch/{{theme}}/bulmaswatch.min.css">
+  </head>
+  <body>
+    <div class="columns is-centered">
+      <div class="column is-narrow">
+
+        <h1 class="title"><span class="has-text-danger">FreeBSD</span> Monitor</h1>
+        {% for _, table in ipairs(tables) do %}
+          {*table*}
+        {% end %}
+
+      </div>
+    </div>
+  </body>
+</html>
+]], { theme=theme, tables=tables })
+    return { status=200, reason="ok", body=body }
+end
+--print(monitor({}))
+
+local server = httpd.create_server("/var/log/mon.log")
+server:add_route("GET", "^/$", monitor)
+server:run(true)

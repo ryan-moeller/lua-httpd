@@ -123,6 +123,7 @@ local function handle_start_line(server, line)
       if rawpath ~= nil then
          local path, params = parse_request_path(rawpath)
          server.request = {
+            server = server,
             method = method,
             path = path,
             params = params,
