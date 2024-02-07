@@ -1,7 +1,5 @@
 local _M = {}
 
-_M.title = "Installed Packages"
-
 _M.cols = {
     {"name", "NAME"},
     --{"origin", "ORIGIN"},

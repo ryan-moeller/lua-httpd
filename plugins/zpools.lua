@@ -1,7 +1,5 @@
 local _M = {}
 
-_M.title = "ZFS Pools"
-
 _M.cols = {
     {"name", "NAME"},
     {"size", "SIZE"},

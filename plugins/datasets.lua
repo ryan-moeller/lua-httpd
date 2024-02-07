@@ -1,7 +1,5 @@
 local _M = {}
 
-_M.title = "ZFS Datasets"
-
 _M.cols = {
     {"name", "NAME"},
     {"used", "USED"},

@@ -27,7 +27,7 @@ local httpd = require("httpd")
 local template = require("template")
 
 local theme = "darkly"
-local plugins = {"klds", "ps", "exports", "zpools", "datasets", "pkgs", "modules"}
+local plugins = {"ps", "exports", "zpools", "datasets", "pkgs"}
 
 local function monitor(request)
     local tables = {}

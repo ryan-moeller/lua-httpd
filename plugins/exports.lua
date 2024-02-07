@@ -1,7 +1,5 @@
 local _M = {}
 
-_M.title = "NFS Exports"
-
 _M.cols = {
     {"directory", "DIRECTORY"}
 }
