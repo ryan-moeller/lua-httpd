@@ -36,11 +36,9 @@ end
 
 function disk.info()
     local disks = {}
-    local text = kern_disks()
-    for dev in text:gmatch("([^ \n]+)") do
+    for dev in kern_disks():gmatch("([^ \n]+)") do
         local disk = {}
-        local text = diskinfo(dev)
-        for line in text:gmatch("([^\n]+)") do
+        for line in diskinfo(dev):gmatch("([^\n]+)") do
             if line:find("#") ~= nil then
                 local value, field = line:match("^\t([^\t]+)\t+# (.*)$")
                 local f, v = field:match("(.*) %((.*)%)")
