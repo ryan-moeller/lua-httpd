@@ -78,7 +78,7 @@ function _M.latest()
 end
 
 function _M.update(set_progress)
-    local steps = 10 + #config_files + 2 * #distributions  -- total number of steps
+    local steps = 11 + #config_files + 2 * #distributions  -- total number of steps
     local step = 1
     local function progress(description)
         set_progress(step / steps, description)

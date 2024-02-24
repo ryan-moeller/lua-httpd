@@ -51,7 +51,7 @@ function _M.umount(name)
 end
 
 function _M.activate(name)
-    assert(os.execute("bectl activate "..name))
+    assert(os.execute("bectl activate "..name.." >/dev/null"))
 end
 
 return _M
