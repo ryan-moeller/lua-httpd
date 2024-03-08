@@ -99,7 +99,7 @@ end
 
 local CMD_STATUS = "status"
 local CMD_BE_LIST = "be_list"
-local CMD_SNAPS_LIST = "snaps_list"
+local CMD_SNAP_LIST = "snap_list"
 local CMD_LATEST = "latest"
 local CMD_UPDATE = "update"
 
@@ -133,10 +133,10 @@ local function ws_handler(msg)
             command = CMD_BE_LIST,
             data = bectl.list()
         }), WS_OP_TEXT, WS_FL_FIN)
-    elseif msg.command == CMD_SNAPS_LIST then
+    elseif msg.command == CMD_SNAP_LIST then
         ws_send(io.stdout, ucl.to_json({
-            command = CMD_SNAPS_LIST,
-            data = beup.snaps_list()
+            command = CMD_SNAP_LIST,
+            data = beup.snap_list()
         }), WS_OP_TEXT, WS_FL_FIN)
     elseif msg.command == CMD_LATEST then
         ws_send(io.stdout, ucl.to_json({

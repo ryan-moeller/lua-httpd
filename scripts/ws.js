@@ -1,7 +1,7 @@
 {# vim: set et sw=4: #}
 
 const CMD_BE_LIST = "be_list";
-const CMD_SNAPS_LIST = "snaps_list";
+const CMD_SNAP_LIST = "snap_list";
 const CMD_LATEST = "latest";
 const CMD_UPDATE = "update";
 
@@ -49,7 +49,7 @@ const handlers = new Map([
         section.classList.remove("is-hidden");
     }],
 
-    [CMD_SNAPS_LIST, (snaps) => {
+    [CMD_SNAP_LIST, (snaps) => {
         const tbody = document.createElement("tbody");
         for (const snap of snaps) {
             const row = tbody.insertRow();
@@ -111,7 +111,7 @@ function ws_command(command) {
 
 webSocket.onopen = (event) => {
     ws_command(CMD_BE_LIST);
-    ws_command(CMD_SNAPS_LIST);
+    ws_command(CMD_SNAP_LIST);
     ws_command(CMD_LATEST);
 }
 

@@ -34,7 +34,7 @@ local distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz
 local snapshots_site = "https://download.freebsd.org/ftp/snapshots/amd64/amd64/"..branch
 local config_files = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
 
-function _M.snaps_list()
+function _M.snap_list()
     local ents = {}
     -- We'll assume this works for now.
     for ent in lfs.dir(basedir) do
