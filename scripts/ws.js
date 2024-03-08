@@ -58,7 +58,7 @@ const handlers = new Map([
             const revision = row.insertCell();
             revision.innerText = snap.revision;
             const path = row.insertCell();
-            path.innerText = basedir + "/" + snap.name;
+            path.innerText = `${basedir}/${snap.name}`;
             const is_be = row.insertCell();
             is_be.innerText = be_find(snap.name) ? "yes" : "no";
         }
@@ -75,7 +75,7 @@ const handlers = new Map([
         } else {
             const section = document.querySelector("#update-available");
             const label = section.querySelector("label");
-            label.innerText = "Update to " + name + "?";
+            label.innerText = `Update to ${name}?`;
             const button = section.querySelector("button");
             button.value = name;
             section.classList.remove("is-hidden");
@@ -103,7 +103,7 @@ const handlers = new Map([
     }]
 ]);
 
-const webSocket = new WebSocket("ws://" + location.host + "/ws");
+const webSocket = new WebSocket(`ws://${location.host}/ws`);
 
 function ws_command(command) {
     webSocket.send(JSON.stringify({command:command}));
