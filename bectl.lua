@@ -54,4 +54,8 @@ function _M.activate(name)
     assert(os.execute("bectl activate "..name.." >/dev/null"))
 end
 
+function _M.destroy(name)
+    assert(os.execute("bectl destroy "..name))
+end
+
 return _M

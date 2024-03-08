@@ -102,6 +102,8 @@ local CMD_BE_LIST = "be_list"
 local CMD_SNAP_LIST = "snap_list"
 local CMD_LATEST = "latest"
 local CMD_UPDATE = "update"
+local CMD_BE_DESTROY = "be_destroy"
+local CMD_SNAP_DELETE = "snap_delete"
 
 local function do_update()
     local function send_progress(progress, description)
@@ -145,6 +147,10 @@ local function ws_handler(msg)
         }), WS_OP_TEXT, WS_FL_FIN)
     elseif msg.command == CMD_UPDATE then
         do_update()
+    elseif msg.command == CMD_BE_DESTROY then
+        bectl.destroy(msg.data.be)
+    elseif msg.command == CMD_SNAP_DELETE then
+        beup.snap_delete(msg.data.snap)
     else
         log:write("unhandled message: ", ucl.to_json({msg}), "\n")
     end
@@ -177,6 +183,7 @@ server:add_route("GET", "^/$", function(request)
                       <th>Mountpoint</th>
                       <th>Space</th>
                       <th>Created</th>
+                      <th>Destroy</th>
                     </tr>
                   </thead>
                 </table>
@@ -190,6 +197,7 @@ server:add_route("GET", "^/$", function(request)
                       <th>Revision</th>
                       <th>Path</th>
                       <th>BE?</th>
+                      <th>Delete</th>
                     </tr>
                   </thead>
                 </table>

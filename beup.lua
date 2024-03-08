@@ -55,6 +55,10 @@ function _M.snap_list()
     return snaps
 end
 
+function _M.snap_delete(name)
+    assert(os.execute("rm -rf "..basedir.."/"..name))
+end
+
 local function fetch_snapshot_meta(name)
     local f, err = io.popen("fetch -qo - "..snapshots_site.."/"..name)
     if not f then
