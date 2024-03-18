@@ -15,14 +15,14 @@
 -- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 --
 
-local _M = {}
+local _M <const> = {}
 
 function _M.list()
-    local f = assert(io.popen("bectl list -HC creation", "r"))
-    local t = f:read("*a")
+    local f <close> = assert(io.popen("bectl list -HC creation", "r"))
+    local t <const> = f:read("*a")
     f:close()
     local bes = {}
-    local pat = "([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\n"
+    local pat <const> = "([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\n"
     for name, active, mountpoint, space, created in t:gmatch(pat) do
         table.insert(bes, {
             name = name,
@@ -40,8 +40,8 @@ function _M.create(name)
 end
 
 function _M.mount(name)
-    local f = assert(io.popen("bectl mount "..name, "r"))
-    local mountpoint = f:read("*a"):match("([^\n]+)")
+    local f <close> = assert(io.popen("bectl mount "..name, "r"))
+    local mountpoint <const> = f:read("*a"):match("([^\n]+)")
     f:close()
     return mountpoint
 end

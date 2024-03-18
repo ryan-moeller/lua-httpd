@@ -20,7 +20,7 @@
 -- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 --
 
-local M = {}
+local M <const> = {}
 
 M.VERSION = '0.0.1'
 
@@ -35,7 +35,7 @@ M.VERSION = '0.0.1'
 --
 -- The server state is a waiting state. So if server.state == START_LINE,
 -- we're looking for a start line next.
-local ServerState = {
+local ServerState <const> = {
    START_LINE = 0,
    HEADER_FIELD = 1
 }
@@ -45,7 +45,7 @@ local ServerState = {
 -- request-line = method SP request-target SP HTTP-version CRLF
 -- method = token
 local function parse_start_line(method, line)
-   local pattern = "^" .. method .. " (%g+) (HTTP/1.1)\r$"
+   local pattern <const> = "^" .. method .. " (%g+) (HTTP/1.1)\r$"
 
    return string.match(line, pattern)
 end
@@ -79,14 +79,14 @@ end
 
 
 local function parse_request_query(query)
-   local params = {}
+   local params <const> = {}
 
    local function parse(kv)
-      local encoded_key, encoded_value = string.match(kv, "^(.*)=(.*)$")
+      local encoded_key <const>, encoded_value <const> = string.match(kv, "^(.*)=(.*)$")
       if encoded_key ~= nil then
-         local key = decode(encoded_key)
-         local value = decode(encoded_value)
-         local param = params[key] or {}
+         local key <const> = decode(encoded_key)
+         local value <const> = decode(encoded_value)
+         local param <const> = params[key] or {}
          table.insert(param, value)
          params[key] = param
       end
@@ -99,29 +99,29 @@ end
 
 
 local function parse_request_path(s)
-   local encoded_path, encoded_query = string.match(s, "^(.*)%?(.*)$")
+   local encoded_path <const>, encoded_query <const> = string.match(s, "^(.*)%?(.*)$")
    if encoded_path == nil then
       return decode(s), {}
    end
 
-   local path = decode(encoded_path)
-   local params = parse_request_query(encoded_query)
+   local path <const> = decode(encoded_path)
+   local params <const> = parse_request_query(encoded_query)
 
    return path, params
 end
 
 
-local methods = {
+local methods <const> = {
    "GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE"
 }
 
 local function handle_start_line(server, line)
    -- Try to match each known method.
    for _, method in ipairs(methods) do
-      local rawpath, version = parse_start_line(method, line)
+      local rawpath <const>, version <const> = parse_start_line(method, line)
 
       if rawpath ~= nil then
-         local path, params = parse_request_path(rawpath)
+         local path <const>, params <const> = parse_request_path(rawpath)
          server.request = {
             server = server,
             method = method,
@@ -148,28 +148,28 @@ end
 -- { status=404, reason="not found", headers={}, cookies={},
 --   body="404 Not Found" }
 local function write_http_response(server, response)
-   local output = server.output
+   local output <const> = server.output
 
-   local status = response.status
-   local reason = response.reason
-   local headers = response.headers or {}
-   local cookies = response.cookies or {}
-   local body = response.body
+   local status <const> = response.status
+   local reason <const> = response.reason
+   local headers <const> = response.headers or {}
+   local cookies <const> = response.cookies or {}
+   local body <const> = response.body
 
    if type(body) == "string" then
       headers['Content-Length'] = #body
    end
 
-   local statusline = string.format("HTTP/1.1 %03d %s\r\n", status, reason)
+   local statusline <const> = string.format("HTTP/1.1 %03d %s\r\n", status, reason)
    output:write(statusline)
 
    for name, value in pairs(headers) do
-      local header = string.format("%s: %s\r\n", name, value)
+      local header <const> = string.format("%s: %s\r\n", name, value)
       output:write(header)
    end
 
    for name, value in pairs(cookies) do
-      local cookie = string.format("Set-Cookie: %s=%s\r\n", name, value)
+      local cookie <const> = string.format("Set-Cookie: %s=%s\r\n", name, value)
       output:write(cookie)
    end
 
@@ -187,9 +187,9 @@ end
 --[[
 -- Log some debugging info
 local function debug_server(server)
-   local log = server.log
-   local request = server.request
-   local handlers = server.handlers[request.method]
+   local log <const> = server.log
+   local request <const> = server.request
+   local handlers <const> = server.handlers[request.method]
 
    log:write("#server.handlers = " .. tostring(#server.handlers) .. "\n")
    log:write("#handlers = " .. tostring(#handlers) .. "\n")
@@ -220,16 +220,16 @@ end
 
 
 local function handle_request(server)
-   local request = server.request
-   local handlers = server.handlers[request.method]
+   local request <const> = server.request
+   local handlers <const> = server.handlers[request.method]
 
    --debug_server(server)
 
    -- Try to service the request.
    local response = { status=404, reason="Not Found", body="not found" }
    for _, location in ipairs(handlers) do
-      local pattern, handler = table.unpack(location)
-      local matches = { string.match(request.path, pattern) }
+      local pattern <const>, handler <const> = table.unpack(location)
+      local matches <const> = { string.match(request.path, pattern) }
       if #matches > 0 then
          request.matches = matches
          response = handler(request)
@@ -252,7 +252,7 @@ end
 local function handle_message_body(server, content_length)
    local body = ""
    repeat
-      local buf = server.input:read(content_length - #body)
+      local buf <const> = server.input:read(content_length - #body)
       if buf then
          body = body .. buf
       else
@@ -271,14 +271,14 @@ end
 
 
 local function handle_blank_line(server)
-   local request = server.request
-   local method = request.method
-   local content_length_header = request.headers['content-length']
+   local request <const> = server.request
+   local method <const> = request.method
+   local content_length_header <const> = request.headers['content-length']
 
    if method_expects_body(method) and content_length_header then
-      local values = content_length_header.list
-      local value = values[#values]
-      local content_length = tonumber(value)
+      local values <const> = content_length_header.list
+      local value <const> = values[#values]
+      local content_length <const> = tonumber(value)
       if content_length then
          return handle_message_body(server, content_length)
       else
@@ -291,8 +291,8 @@ end
 
 local function set_cookie(server, cookie)
    -- Browsers do not send cookie attributes in requests.
-   local name, value = string.match(cookie, "(.+)=(.*)")
-   local cookie = server.request.cookies[name] or {}
+   local name <const>, value <const> = string.match(cookie, "(.+)=(.*)")
+   local cookie <const> = server.request.cookies[name] or {}
    table.insert(cookie, value)
    server.request.cookies[name] = cookie
 end
@@ -303,9 +303,9 @@ local function parse_header_value(header, value)
 
    local function parse(attrib)
       table.insert(header.list, attrib)
-      local key, value = string.match(attrib, "^%s*(.*)=(.*)%s*$")
+      local key <const>, value <const> = string.match(attrib, "^%s*(.*)=(.*)%s*$")
       if key then
-         local attrval = header.dict[key] or {}
+         local attrval <const> = header.dict[key] or {}
          table.insert(attrval, value)
          header.dict[key] = attrval
       end
@@ -318,9 +318,9 @@ end
 
 
 local function update_header(server, name, value)
-   local headers = server.request.headers
+   local headers <const> = server.request.headers
    -- Header may be repeated to form a list.
-   local header = headers[name] or { dict={}, list={} }
+   local header <const> = headers[name] or { dict={}, list={} }
    headers[name] = parse_header_value(header, value)
 end
 
@@ -335,11 +335,11 @@ local function handle_header_field(server, line)
       -- When there are no headers left we get just a blank line.
       return handle_blank_line(server)
    else
-      local name, value = parse_header_field(line)
+      local name <const>, value <const> = parse_header_field(line)
 
       if name then
          -- Header field names are case-insensitive.
-         local lname = string.lower(name)
+         local lname <const> = string.lower(name)
          if lname == "cookie" then
             set_cookie(server, value)
          else
@@ -356,7 +356,7 @@ end
 
 
 local function handle_request_line(server, line)
-   local state = server.state
+   local state <const> = server.state
 
    if state == ServerState.START_LINE then
       return handle_start_line(server, line)
@@ -372,7 +372,7 @@ end
 
 
 function M.create_server(logfile)
-   local server = {
+   local server <const> = {
       state = ServerState.START_LINE,
       log = io.open(logfile, "a"),
       input = io.input(),

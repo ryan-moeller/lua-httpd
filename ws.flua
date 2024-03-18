@@ -23,20 +23,20 @@
 
 package.path = "/home/ryan/lua-httpd-ws/?.lua;" .. package.path
 
-local bectl = require("bectl")
-local beup = require("beup")
-local httpd = require("httpd")
-local template = require("template")
-local ucl = require("ucl")
-local ws = require("websocket")
+local bectl <const> = require("bectl")
+local beup <const> = require("beup")
+local httpd <const> = require("httpd")
+local template <const> = require("template")
+local ucl <const> = require("ucl")
+local ws <const> = require("websocket")
 
-local CMD_STATUS = "status"
-local CMD_BE_LIST = "be_list"
-local CMD_SNAP_LIST = "snap_list"
-local CMD_LATEST = "latest"
-local CMD_UPDATE = "update"
-local CMD_BE_DESTROY = "be_destroy"
-local CMD_SNAP_DELETE = "snap_delete"
+local CMD_STATUS <const> = "status"
+local CMD_BE_LIST <const> = "be_list"
+local CMD_SNAP_LIST <const> = "snap_list"
+local CMD_LATEST <const> = "latest"
+local CMD_UPDATE <const> = "update"
+local CMD_BE_DESTROY <const> = "be_destroy"
+local CMD_SNAP_DELETE <const> = "snap_delete"
 
 local function do_update()
     local function send_progress(progress, description)
@@ -48,7 +48,7 @@ local function do_update()
             }
         }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
     end
-    local ok, err, rc = beup.update(send_progress)
+    local ok <const>, err <const>, rc <const> = beup.update(send_progress)
     if not ok then
         ws.send(io.stdout, ucl.to_json({
             command = CMD_UPDATE,
@@ -89,10 +89,10 @@ local function ws_handler(msg)
     end
 end
 
-local server = httpd.create_server("/var/log/wsdemo.log")
+local server <const> = httpd.create_server("/var/log/wsdemo.log")
 
 server:add_route("GET", "^/$", function(request)
-    local body = template.process([[
+    local body <const> = template.process([[
       <!DOCTYPE html>
       <html lang="en">
         <head>
@@ -182,14 +182,14 @@ server:add_route("GET", "^/ws$", function(request)
             break
         end
     end
-    local upgrade = request.headers["upgrade"].raw
-    local key = request.headers["sec-websocket-key"].raw
-    local version = request.headers["sec-websocket-version"].raw
+    local upgrade <const> = request.headers["upgrade"].raw
+    local key <const> = request.headers["sec-websocket-key"].raw
+    local version <const> = request.headers["sec-websocket-version"].raw
     if connection ~= "Upgrade" or upgrade ~= "websocket" or version ~= "13" then
         log:write("bad request\n");
         return { status=400, reason="Bad Request", body="can't do that" }
     end
-    local headers = {
+    local headers <const> = {
         ["Connection"] = connection,
         ["Upgrade"] = upgrade,
         ["Sec-WebSocket-Accept"] = ws.accept(key),
@@ -198,7 +198,7 @@ server:add_route("GET", "^/ws$", function(request)
         log:write("switching connection to websocket protocol\n")
         local buf = ""
         repeat
-            local payload, len, opcode, flags = ws.receive(io.stdin)
+            local payload <const>, len <const>, opcode <const>, flags <const> = ws.receive(io.stdin)
             if opcode == ws.WS_OP_CLOSE then
                 break
             elseif opcode == ws.WS_OP_PING then
@@ -206,15 +206,15 @@ server:add_route("GET", "^/ws$", function(request)
             elseif opcode == ws.WS_OP_TEXT then
                 buf = buf .. payload
                 if flags & ws.WS_FL_FIN then
-                    local parser = ucl.parser()
-                    local ok, err = parser:parse_string(buf, "json")
+                    local parser <const> = ucl.parser()
+                    local ok <const>, err <const> = parser:parse_string(buf, "json")
                     buf = ""
                     if not ok then
                         log:write("parser error: ", err, "\n")
                         ws.send(io.stdout, "internal server error", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
                         break
                     end
-                    local msg = parser:get_object()
+                    local msg <const> = parser:get_object()
                     ws_handler(msg)
                 end
             else

@@ -15,38 +15,38 @@
 -- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 --
 
-local _M = {}
+local _M <const> = {}
 
-local bectl = require("bectl")
-local lfs = require("lfs")
+local bectl <const> = require("bectl")
+local lfs <const> = require("lfs")
 
 local function freebsd_version()
-    local f = assert(io.popen("freebsd-version", "r"))
-    local version = f:read("*a"):match("([^\n]+)")
+    local f <close> = assert(io.popen("freebsd-version", "r"))
+    local version <const> = f:read("*a"):match("([^\n]+)")
     f:close()
     return version
 end
 
 -- TODO: make these configurable
-local basedir = "/system"
-local branch = freebsd_version()
-local distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
-local snapshots_site = "https://download.freebsd.org/ftp/snapshots/amd64/amd64/"..branch
-local config_files = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
+local basedir <const> = "/system"
+local branch <const> = freebsd_version()
+local distributions <const> = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
+local snapshots_site <const> = "https://download.freebsd.org/ftp/snapshots/amd64/amd64/"..branch
+local config_files <const> = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
 
 function _M.snap_list()
-    local ents = {}
+    local ents <const> = {}
     -- We'll assume this works for now.
     for ent in lfs.dir(basedir) do
-        local path = basedir.."/"..ent
+        local path <const> = basedir.."/"..ent
         if ent ~= "." and ent ~= ".." and lfs.attributes(path).mode == "directory" then
             table.insert(ents, ent)
         end
     end
     table.sort(ents, function(a, b) return a > b end)
-    local snaps = {}
+    local snaps <const> = {}
     for _, ent in ipairs(ents) do
-        local snap = {}
+        local snap <const> = {}
         snap.name = ent
         snap.build_date = ent:match("([^-]+)-")
         snap.revision = ent:match("-([^-]+)")
@@ -60,21 +60,21 @@ function _M.snap_delete(name)
 end
 
 local function fetch_snapshot_meta(name)
-    local f, err = io.popen("fetch -qo - "..snapshots_site.."/"..name)
+    local f <close>, err <const> = io.popen("fetch -qo - "..snapshots_site.."/"..name)
     if not f then
         return nil, err
     end
-    local t = f:read("*a"):match("([^\n]+)")
+    local t <const> = f:read("*a"):match("([^\n]+)")
     f:close()
     return t
 end
 
 function _M.latest()
-    local builddate, err = fetch_snapshot_meta("BUILDDATE")
+    local builddate <const>, err <const> = fetch_snapshot_meta("BUILDDATE")
     if not builddate then
         return nil, err
     end
-    local revision, err = fetch_snapshot_meta("REVISION")
+    local revision <const>, err <const> = fetch_snapshot_meta("REVISION")
     if not revision then
         return nil, err
     end
@@ -82,7 +82,7 @@ function _M.latest()
 end
 
 function _M.update(set_progress)
-    local steps = 11 + #config_files + 2 * #distributions  -- total number of steps
+    local steps <const> = 11 + #config_files + 2 * #distributions  -- total number of steps
     local step = 1
     local function progress(description)
         set_progress(step / steps, description)
@@ -90,7 +90,7 @@ function _M.update(set_progress)
     end
 
     progress("Fetching latest snapshot metadata")
-    local name, err = _M.latest()
+    local name <const>, err <const> = _M.latest()
     if not name then
         return nil, err
     end
@@ -98,9 +98,9 @@ function _M.update(set_progress)
     local description = "Fetching archives"
     local sep = ": "
     progress(description)
-    local archives = basedir.."/"..name
+    local archives <const> = basedir.."/"..name
     if not lfs.mkdir(archives) then
-        local attrs, err = lfs.attributes(archives)
+        local attrs <const>, err <const> = lfs.attributes(archives)
         if not attrs then
             return nil, err
         end
@@ -112,10 +112,10 @@ function _M.update(set_progress)
         description = description..sep..f
         sep = ", "
         progress(description)
-        local path = archives.."/"..f
-        local url = snapshots_site.."/"..f
+        local path <const> = archives.."/"..f
+        local url <const> = snapshots_site.."/"..f
         -- TODO: fire off a background task, show progress to user?
-        local ok, err, rc = os.execute("fetch -qmo "..path.." "..url)
+        local ok <const>, err <const>, rc <const> = os.execute("fetch -qmo "..path.." "..url)
         if not ok then
             return nil, err, rc
         end
@@ -125,10 +125,10 @@ function _M.update(set_progress)
     bectl.create(name)
 
     progress("Mounting boot environment")
-    local mountpoint = bectl.mount(name)
+    local mountpoint <const> = bectl.mount(name)
 
     progress("Setting filesystem flags")
-    local ok, err, rc = os.execute("chflags -R noschg "..mountpoint)
+    local ok <const>, err <const>, rc <const> = os.execute("chflags -R noschg "..mountpoint)
     if not ok then
         return nil, err, rc
     end
@@ -142,17 +142,17 @@ function _M.update(set_progress)
         progress(description)
         if f == "src.txz" then
             -- TODO: preserve local changes in /usr/src
-            local ok, err, rc = os.execute("rm -rf /usr/src/*")
+            local ok <const>, err <const>, rc <const> = os.execute("rm -rf /usr/src/*")
             if not ok then
                 return nil, err, rc
             end
-            local ok, err, rc = os.execute("tar -xf "..archives.."/"..f.." -C /")
+            local ok <const>, err <const>, rc <const> = os.execute("tar -xf "..archives.."/"..f.." -C /")
             if not ok then
                 return nil, err, rc
             end
         else
             -- TODO: remove obsolete files from cloned be
-            local ok, err, rc = os.execute("tar -xf "..archives.."/"..f.." -C "..mountpoint)
+            local ok <const>, err <const>, rc <const> = os.execute("tar -xf "..archives.."/"..f.." -C "..mountpoint)
             if not ok then
                 return nil, err, rc
             end
@@ -167,18 +167,18 @@ function _M.update(set_progress)
         sep = ", "
         progress(description)
         -- cat to preserve metadata (etcupdate does it this way)
-        local ok, err, rc = os.execute("cat /etc/"..f.." >"..mountpoint.."/etc/"..f)
+        local ok <const>, err <const>, rc <const> = os.execute("cat /etc/"..f.." >"..mountpoint.."/etc/"..f)
         if not ok then
             return nil, err, rc
         end
     end
 
     progress("Regenerating system databases")
-    local ok, err, rc = os.execute("pwd_mkdb -d "..mountpoint.."/etc -p "..mountpoint.."/etc/master.passwd")
+    local ok <const>, err <const>, rc <const> = os.execute("pwd_mkdb -d "..mountpoint.."/etc -p "..mountpoint.."/etc/master.passwd")
     if not ok then
         return nil, err, rc
     end
-    local ok, err, rc = os.execute("services_mkdb -q -o "..mountpoint.."/var/db/services.db "..mountpoint.."/etc/services")
+    local ok <const>, err <const>, rc <const> = os.execute("services_mkdb -q -o "..mountpoint.."/var/db/services.db "..mountpoint.."/etc/services")
     if not ok then
         return nil, err, rc
     end
