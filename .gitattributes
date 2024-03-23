@@ -1,1 +1,3 @@
 *.flua linguist-language=Lua
+httpd linguist-language=Lua
+restapi linguist-language=Lua
