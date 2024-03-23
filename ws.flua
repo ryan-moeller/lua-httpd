@@ -62,7 +62,9 @@ end
 
 local function ws_handler(msg)
     if msg.command == CMD_STATUS then
-        ws.send(io.stdout, ucl.to_json({status="ok"}), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+        ws.send(io.stdout, ucl.to_json({
+            status = "ok"
+        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
     elseif msg.command == CMD_BE_LIST then
         ws.send(io.stdout, ucl.to_json({
             command = CMD_BE_LIST,
