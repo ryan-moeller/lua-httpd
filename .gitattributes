@@ -1,3 +1,5 @@
 *.flua linguist-language=Lua
+beup linguist-language=Lua
 httpd linguist-language=Lua
+mon linguist-language=Lua
 restapi linguist-language=Lua
