@@ -65,7 +65,7 @@ function _M.receive(input)
         return nil, len, opcode, flags
     end
     local payload <const> = input:read(len)
-    return xor.unmask(payload, key), len, opcode, flags
+    return xor.apply(payload, key), len, opcode, flags
 end
 
 function _M.send(output, payload, opcode, flags)
