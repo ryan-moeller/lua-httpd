@@ -3,7 +3,7 @@
 -- Minimal web server written in Lua
 --
 -- Use with inetd, no other dependencies:
--- http    stream  tcp     nowait  root    /usr/local/sbin/httpd      httpd
+-- http  stream  tcp  nowait  root  /home/ryan/lua-httpd-ws/ws.flua  httpd
 
 --
 -- Copyright (c) 2016 - 2024 Ryan Moeller <ryan-moeller@att.net>
