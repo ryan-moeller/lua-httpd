@@ -21,7 +21,7 @@ function _M.list()
     local f <close> = assert(io.popen("bectl list -HC creation", "r"))
     local t <const> = f:read("*a")
     f:close()
-    local bes = {}
+    local bes <const> = {}
     local pat <const> = "([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\n"
     for name, active, mountpoint, space, created in t:gmatch(pat) do
         table.insert(bes, {
