@@ -196,8 +196,7 @@ server:add_route("GET", "^/ws$", function(request)
         ["Upgrade"] = upgrade,
         ["Sec-WebSocket-Accept"] = ws.accept(key),
     }
-    return { headers=headers, status=101, reason="Switching Protocols", body=function()
-        log:write("switching connection to websocket protocol\n")
+    local function ws_main()
         local buf = ""
         repeat
             local payload <const>, len <const>, opcode <const>, flags <const> = ws.receive(io.stdin)
@@ -223,7 +222,9 @@ server:add_route("GET", "^/ws$", function(request)
                 log:write("unhandled op: ", opcode, "\n")
             end
         until false
-    end}
+    end
+    log:write("switching connection to websocket protocol\n")
+    return { headers=headers, status=101, reason="Switching Protocols", body=ws_main }
 end)
 
 server:run(true)
