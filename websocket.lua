@@ -17,9 +17,7 @@
 
 local _M <const> = {}
 
-package.cpath = "/home/ryan/flualibs/libmd/?.so;" .. package.cpath
-package.cpath = "/home/ryan/flualibs/libroken/?.so;" .. package.cpath
-package.cpath = "/home/ryan/flualibs/libxor/?.so;" .. package.cpath
+package.cpath = "/home/ryan/flualibs/lib?/?.so;" .. package.cpath
 
 local b64 <const> = require("roken")
 local md <const> = require("md")
