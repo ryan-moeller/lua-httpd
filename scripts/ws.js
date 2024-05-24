@@ -7,11 +7,11 @@ const CMD_UPDATE = "update";
 const CMD_BE_DESTROY = "be_destroy";
 const CMD_SNAP_DELETE = "snap_delete";
 
-const basedir = "/system"
+const basedir = "/system";
 
 const trashIconHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="icon" aria-hidden="true" focusable="false" viewBox="0 0 448 512"><!--!Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.--><path fill="currentColor" d="M135.2 17.7L128 32H32C14.3 32 0 46.3 0 64S14.3 96 32 96H416c17.7 0 32-14.3 32-32s-14.3-32-32-32H320l-7.2-14.3C307.4 6.8 296.3 0 284.2 0H163.8c-12.1 0-23.2 6.8-28.6 17.7zM416 128H32L53.2 467c1.6 25.3 22.6 45 47.9 45H346.9c25.3 0 46.3-19.7 47.9-45L416 128z"/></svg>';
 
-let g_bootenvs = []
+let g_bootenvs = [];
 
 function be_find(name) {
     for (const be of g_bootenvs) {
@@ -126,7 +126,7 @@ const handlers = new Map([
             if (progress.rc) {
                 const header = message.querySelector("div.message-header");
                 const em = header.querySelector("em");
-                em.innerText = `${progress.rc}`
+                em.innerText = `${progress.rc}`;
             }
             const text = message.querySelector("div.message-body");
             text.innerText = progress.error;
