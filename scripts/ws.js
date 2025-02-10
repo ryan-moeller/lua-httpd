@@ -155,7 +155,7 @@ webSocket.onopen = (event) => {
     ws_command(CMD_BE_LIST);
     ws_command(CMD_SNAP_LIST);
     ws_command(CMD_LATEST);
-}
+};
 
 webSocket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
