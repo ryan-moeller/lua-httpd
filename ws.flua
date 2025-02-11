@@ -6,7 +6,7 @@
 -- http  stream  tcp  nowait  root  /home/ryan/lua-httpd-ws/ws.flua  httpd
 
 --
--- Copyright (c) 2016 - 2024 Ryan Moeller <ryan-moeller@att.net>
+-- Copyright (c) 2016 - 2025 Ryan Moeller <ryan-moeller@att.net>
 --
 -- Permission to use, copy, modify, and distribute this software for any
 -- purpose with or without fee is hereby granted, provided that the above
