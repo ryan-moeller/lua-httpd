@@ -42,6 +42,19 @@ function snap_delete(row, snap) {
     ws_command_data(CMD_SNAP_DELETE, {snap:snap});
 }
 
+function format_timestamp(when) {
+    const date = new Date(when * 1000);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const day = date.getDate();
+    const hour = date.getHours();
+    const minute = date.getMinutes();
+    function pad(n) {
+        return (n < 10 ? "0" : "") + String(n);
+    }
+    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}`;
+}
+
 const handlers = new Map([
     [CMD_BE_LIST, (bootenvs) => {
         g_bootenvs = bootenvs;
@@ -55,10 +68,10 @@ const handlers = new Map([
             active.innerText = be.active;
             const mountpoint = row.insertCell();
             mountpoint.innerText = be.mountpoint;
-            const space = row.insertCell();
-            space.innerText = be.space;
-            const created = row.insertCell();
-            created.innerText = be.created;
+            const used = row.insertCell();
+            used.innerText = be.used;
+            const creation = row.insertCell();
+            creation.innerText = format_timestamp(be.creation);
             const del = row.insertCell();
             const deleteButton = document.createElement("button");
             deleteButton.classList.add("button", "is-danger");

@@ -17,45 +17,63 @@
 
 local _M <const> = {}
 
+package.cpath = "/home/ryan/flualibs/lib?/?.so;" .. package.cpath
+
+local be <const> = require("be")
+
+local function init_quiet()
+    local handle <const> = be.init()
+    handle:print_on_error(false)
+    return handle
+end
+
 function _M.list()
-    local f <close> = assert(io.popen("bectl list -HC creation", "r"))
-    local t <const> = f:read("*a")
-    f:close()
+    local handle <const> = init_quiet()
+    local props <const> = handle:get_bootenv_props()
     local bes <const> = {}
-    local pat <const> = "([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\n"
-    for name, active, mountpoint, space, created in t:gmatch(pat) do
-        table.insert(bes, {
+    for name in pairs(props) do
+        table.insert(bes, name)
+    end
+    local function creation_descending(a, b)
+        return props[a].creation > props[b].creation
+    end
+    table.sort(bes, creation_descending)
+    local result <const> = {}
+    for _, name in ipairs(bes) do
+        table.insert(result, {
             name = name,
-            active = active,
-            mountpoint = mountpoint,
-            space = space,
-            created = created,
+            active = props[name].active,
+            mountpoint = props[name].mountpoint,
+            used = be.nicenum(props[name].used) .. "B",
+            creation = props[name].creation,
         })
     end
-    return bes
+    return result
 end
 
 function _M.create(name)
-    assert(os.execute("bectl create "..name))
+    local handle <const> = init_quiet()
+    handle:create(name)
 end
 
 function _M.mount(name)
-    local f <close> = assert(io.popen("bectl mount "..name, "r"))
-    local mountpoint <const> = f:read("*a"):match("([^\n]+)")
-    f:close()
-    return mountpoint
+    local handle <const> = init_quiet()
+    return handle:mount(name, nil, be.MNT_DEEP)
 end
 
 function _M.umount(name)
-    assert(os.execute("bectl umount "..name))
+    local handle <const> = init_quiet()
+    handle:unmount(name, 0)
 end
 
 function _M.activate(name)
-    assert(os.execute("bectl activate "..name.." >/dev/null"))
+    local handle <const> = init_quiet()
+    handle:activate(name, false)
 end
 
 function _M.destroy(name)
-    assert(os.execute("bectl destroy "..name))
+    local handle <const> = init_quiet()
+    handle:destroy(name, false)
 end
 
 return _M
