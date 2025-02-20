@@ -73,7 +73,7 @@ end
 
 function _M.destroy(name)
     local handle <const> = init_quiet()
-    handle:destroy(name, false)
+    handle:destroy(name, 0)
 end
 
 return _M
