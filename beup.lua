@@ -23,7 +23,6 @@ local lfs <const> = require("lfs")
 local function freebsd_version()
     local f <close> = assert(io.popen("freebsd-version", "r"))
     local version <const> = f:read("*a"):match("([^\n]+)")
-    f:close()
     return version
 end
 
@@ -65,7 +64,6 @@ local function fetch_snapshot_meta(name)
         return nil, err
     end
     local t <const> = f:read("*a"):match("([^\n]+)")
-    f:close()
     return t
 end
 
