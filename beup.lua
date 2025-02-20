@@ -17,6 +17,9 @@
 
 local _M <const> = {}
 
+package.cpath = "/home/ryan/flualibs/lib?/?.so;" .. package.cpath
+
+local fetch <const> = require("fetch")
 local bectl <const> = require("bectl")
 local lfs <const> = require("lfs")
 
@@ -59,7 +62,7 @@ function _M.snap_delete(name)
 end
 
 local function fetch_snapshot_meta(name)
-    local f <close>, err <const> = io.popen("fetch -qo - "..snapshots_site.."/"..name)
+    local f <close>, err <const> = fetch.get(snapshots_site.."/"..name)
     if not f then
         return nil, err
     end
@@ -77,6 +80,37 @@ function _M.latest()
         return nil, err
     end
     return builddate.."-"..revision
+end
+
+-- TODO: progress reporting
+local function fetch_file(url, path)
+    local inf <close>, err <const>, code <const> = fetch.get(url)
+    if not inf then
+        return nil, err, code
+    end
+    local outf <close>, err <const>, code <const> = io.open(path, "w+")
+    if not outf then
+        return nil, err, code
+    end
+    local bufsize <const> = 16384 -- fetch.c MINBUFSIZE
+    inf:setvbuf("full", bufsize)
+    repeat
+        local buf <const>, err <const>, code <const> = inf:read(bufsize)
+        if not buf then
+            return nil, err, code
+        end
+        if #buf == 0 then
+            break
+        end
+        local ok <const>, err <const>, code <const> = outf:write(buf)
+        if not ok then
+            return nil, err, code
+        end
+        if #buf < bufsize then
+            break
+        end
+    until false
+    return true
 end
 
 function _M.update(set_progress)
@@ -113,7 +147,7 @@ function _M.update(set_progress)
         local path <const> = archives.."/"..f
         local url <const> = snapshots_site.."/"..f
         -- TODO: fire off a background task, show progress to user?
-        local ok <const>, err <const>, rc <const> = os.execute("fetch -qmo "..path.." "..url)
+        local ok <const>, err <const>, rc <const> = fetch_file(url, path)
         if not ok then
             return nil, err, rc
         end
