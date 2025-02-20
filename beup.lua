@@ -17,8 +17,6 @@
 
 local _M <const> = {}
 
-package.cpath = "/home/ryan/flualibs/lib?/?.so;" .. package.cpath
-
 local fetch <const> = require("fetch")
 local bectl <const> = require("bectl")
 local lfs <const> = require("lfs")

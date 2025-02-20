@@ -17,8 +17,6 @@
 
 local _M <const> = {}
 
-package.cpath = "/home/ryan/flualibs/lib?/?.so;" .. package.cpath
-
 local be <const> = require("be")
 
 local function init_quiet()

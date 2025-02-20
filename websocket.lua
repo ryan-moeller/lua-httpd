@@ -17,8 +17,6 @@
 
 local _M <const> = {}
 
-package.cpath = "/home/ryan/flualibs/lib?/?.so;" .. package.cpath
-
 local b64 <const> = require("roken")
 local md <const> = require("md")
 local xor <const> = require("xor")

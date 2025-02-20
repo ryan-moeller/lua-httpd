@@ -22,6 +22,7 @@
 --
 
 package.path = "/home/ryan/lua-httpd-ws/?.lua;" .. package.path
+package.cpath = "/home/ryan/flualibs/lib?/?.so;" .. package.cpath
 
 local bectl <const> = require("bectl")
 local beup <const> = require("beup")
