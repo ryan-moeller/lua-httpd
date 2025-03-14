@@ -27,6 +27,7 @@ local function freebsd_version()
     return version
 end
 
+_M.logfile = "/dev/null"
 _M.basedir = "/system"
 _M.branch = freebsd_version()
 _M.distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
@@ -56,7 +57,8 @@ end
 
 function _M.snap_delete(name)
     local cmd <const> = string.format("rm -rf %s/%s", _M.basedir, name)
-    assert(os.execute(cmd))
+    local redir <const> = string.format(" >>%s 2>>%s", _M.logfile, _M.logfile)
+    assert(os.execute(cmd..redir))
 end
 
 local function fetch_snapshot_meta(name)
@@ -159,7 +161,8 @@ function _M.update(set_progress)
 
     progress("Setting filesystem flags")
     local cmd <const> = string.format("chflags -R noschg %s", mountpoint)
-    local ok <const>, err <const>, rc <const> = os.execute(cmd)
+    local redir <const> = string.format(" >>%s 2>>%s", _M.logfile, _M.logfile)
+    local ok <const>, err <const>, rc <const> = os.execute(cmd..redir)
     if not ok then
         return nil, err, rc
     end
@@ -174,19 +177,19 @@ function _M.update(set_progress)
         if f == "src.txz" then
             -- XXX: won't preserve local changes in /usr/src
             local cmd <const> = "rm -rf /usr/src/*"
-            local ok <const>, err <const>, rc <const> = os.execute(cmd)
+            local ok <const>, err <const>, rc <const> = os.execute(cmd..redir)
             if not ok then
                 return nil, err, rc
             end
             local cmd <const> = string.format("tar -xf %s/%s -C /", archives, f)
-            local ok <const>, err <const>, rc <const> = os.execute(cmd)
+            local ok <const>, err <const>, rc <const> = os.execute(cmd..redir)
             if not ok then
                 return nil, err, rc
             end
         else
             -- TODO: remove obsolete files from cloned be
             local cmd <const> = string.format("tar -xf %s/%s -C %s", archives, f, mountpoint)
-            local ok <const>, err <const>, rc <const> = os.execute(cmd)
+            local ok <const>, err <const>, rc <const> = os.execute(cmd..redir)
             if not ok then
                 return nil, err, rc
             end
@@ -202,7 +205,8 @@ function _M.update(set_progress)
         progress(description)
         -- cat to preserve metadata (etcupdate does it this way)
         local cmd <const> = string.format("cat /etc/%s >%s/etc/%s", f, mountpoint, f)
-        local ok <const>, err <const>, rc <const> = os.execute(cmd)
+        local redir2 <const> = " 2>>".._M.logfile
+        local ok <const>, err <const>, rc <const> = os.execute(cmd..redir2)
         if not ok then
             return nil, err, rc
         end
@@ -210,12 +214,12 @@ function _M.update(set_progress)
 
     progress("Regenerating system databases")
     local cmd <const> = string.format("pwd_mkdb -d %s/etc -p %s/etc/master.passwd", mountpoint, mountpoint)
-    local ok <const>, err <const>, rc <const> = os.execute(cmd)
+    local ok <const>, err <const>, rc <const> = os.execute(cmd..redir)
     if not ok then
         return nil, err, rc
     end
     local cmd <const> = string.format("services_mkdb -q -o %s/var/db/services.db %s/etc/services", mountpoint, mountpoint)
-    local ok <const>, err <const>, rc <const> = os.execute(cmd)
+    local ok <const>, err <const>, rc <const> = os.execute(cmd..redir)
     if not ok then
         return nil, err, rc
     end

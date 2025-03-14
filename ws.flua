@@ -31,6 +31,9 @@ local template <const> = require("template")
 local ucl <const> = require("ucl")
 local ws <const> = require("websocket")
 
+local logfile <const> = "/var/log/wsdemo.log"
+beup.logfile = logfile
+
 local CMD_STATUS <const> = "status"
 local CMD_BE_LIST <const> = "be_list"
 local CMD_SNAP_LIST <const> = "snap_list"
@@ -92,7 +95,7 @@ local function ws_handler(msg)
     end
 end
 
-local server <const> = httpd.create_server("/var/log/wsdemo.log")
+local server <const> = httpd.create_server(logfile)
 
 server:add_route("GET", "^/$", function(request)
     local body <const> = template.process([[
