@@ -27,18 +27,17 @@ local function freebsd_version()
     return version
 end
 
--- TODO: make these configurable
-local basedir <const> = "/system"
-local branch <const> = freebsd_version()
-local distributions <const> = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
-local snapshots_site <const> = "https://download.freebsd.org/ftp/snapshots/amd64/amd64/"..branch
-local config_files <const> = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
+_M.basedir = "/system"
+_M.branch = freebsd_version()
+_M.distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
+_M.snapshots_site = "https://download.freebsd.org/ftp/snapshots/amd64/amd64/".._M.branch
+_M.config_files = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
 
 function _M.snap_list()
     local ents <const> = {}
     -- We'll assume this works for now.
-    for ent in lfs.dir(basedir) do
-        local path <const> = basedir.."/"..ent
+    for ent in lfs.dir(_M.basedir) do
+        local path <const> = _M.basedir.."/"..ent
         if ent ~= "." and ent ~= ".." and lfs.attributes(path).mode == "directory" then
             table.insert(ents, ent)
         end
@@ -56,11 +55,12 @@ function _M.snap_list()
 end
 
 function _M.snap_delete(name)
-    assert(os.execute("rm -rf "..basedir.."/"..name))
+    local cmd <const> = string.format("rm -rf %s/%s", _M.basedir, name)
+    assert(os.execute(cmd))
 end
 
 local function fetch_snapshot_meta(name)
-    local f <close>, err <const> = fetch.get(snapshots_site.."/"..name)
+    local f <close>, err <const> = fetch.get(_M.snapshots_site.."/"..name)
     if not f then
         return nil, err
     end
@@ -112,7 +112,7 @@ local function fetch_file(url, path)
 end
 
 function _M.update(set_progress)
-    local steps <const> = 11 + #config_files + 2 * #distributions  -- total number of steps
+    local steps <const> = 11 + #_M.config_files + 2 * #_M.distributions  -- total number of steps
     local step = 1
     local function progress(description)
         set_progress(step / steps, description)
@@ -128,7 +128,7 @@ function _M.update(set_progress)
     local description = "Fetching archives"
     local sep = ": "
     progress(description)
-    local archives <const> = basedir.."/"..name
+    local archives <const> = _M.basedir.."/"..name
     if not lfs.mkdir(archives) then
         local attrs <const>, err <const> = lfs.attributes(archives)
         if not attrs then
@@ -138,12 +138,12 @@ function _M.update(set_progress)
             return nil, "Basedir is not a directory!"
         end
     end
-    for _, f in ipairs(distributions) do
+    for _, f in ipairs(_M.distributions) do
         description = description..sep..f
         sep = ", "
         progress(description)
         local path <const> = archives.."/"..f
-        local url <const> = snapshots_site.."/"..f
+        local url <const> = _M.snapshots_site.."/"..f
         -- TODO: fire off a background task, show progress to user?
         local ok <const>, err <const>, rc <const> = fetch_file(url, path)
         if not ok then
@@ -158,7 +158,8 @@ function _M.update(set_progress)
     local mountpoint <const> = bectl.mount(name)
 
     progress("Setting filesystem flags")
-    local ok <const>, err <const>, rc <const> = os.execute("chflags -R noschg "..mountpoint)
+    local cmd <const> = string.format("chflags -R noschg %s", mountpoint)
+    local ok <const>, err <const>, rc <const> = os.execute(cmd)
     if not ok then
         return nil, err, rc
     end
@@ -166,23 +167,26 @@ function _M.update(set_progress)
     local description = "Extracting archives"
     local sep = ": "
     progress(description)
-    for _, f in ipairs(distributions) do
+    for _, f in ipairs(_M.distributions) do
         description = description..sep..f
         sep = ", "
         progress(description)
         if f == "src.txz" then
-            -- TODO: preserve local changes in /usr/src
-            local ok <const>, err <const>, rc <const> = os.execute("rm -rf /usr/src/*")
+            -- XXX: won't preserve local changes in /usr/src
+            local cmd <const> = "rm -rf /usr/src/*"
+            local ok <const>, err <const>, rc <const> = os.execute(cmd)
             if not ok then
                 return nil, err, rc
             end
-            local ok <const>, err <const>, rc <const> = os.execute("tar -xf "..archives.."/"..f.." -C /")
+            local cmd <const> = string.format("tar -xf %s/%s -C /", archives, f)
+            local ok <const>, err <const>, rc <const> = os.execute(cmd)
             if not ok then
                 return nil, err, rc
             end
         else
             -- TODO: remove obsolete files from cloned be
-            local ok <const>, err <const>, rc <const> = os.execute("tar -xf "..archives.."/"..f.." -C "..mountpoint)
+            local cmd <const> = string.format("tar -xf %s/%s -C %s", archives, f, mountpoint)
+            local ok <const>, err <const>, rc <const> = os.execute(cmd)
             if not ok then
                 return nil, err, rc
             end
@@ -192,23 +196,26 @@ function _M.update(set_progress)
     local description = "Copying system config files"
     local sep = ": "
     progress(description)
-    for _, f in ipairs(config_files) do
+    for _, f in ipairs(_M.config_files) do
         description = description..sep..f
         sep = ", "
         progress(description)
         -- cat to preserve metadata (etcupdate does it this way)
-        local ok <const>, err <const>, rc <const> = os.execute("cat /etc/"..f.." >"..mountpoint.."/etc/"..f)
+        local cmd <const> = string.format("cat /etc/%s >%s/etc/%s", f, mountpoint, f)
+        local ok <const>, err <const>, rc <const> = os.execute(cmd)
         if not ok then
             return nil, err, rc
         end
     end
 
     progress("Regenerating system databases")
-    local ok <const>, err <const>, rc <const> = os.execute("pwd_mkdb -d "..mountpoint.."/etc -p "..mountpoint.."/etc/master.passwd")
+    local cmd <const> = string.format("pwd_mkdb -d %s/etc -p %s/etc/master.passwd", mountpoint, mountpoint)
+    local ok <const>, err <const>, rc <const> = os.execute(cmd)
     if not ok then
         return nil, err, rc
     end
-    local ok <const>, err <const>, rc <const> = os.execute("services_mkdb -q -o "..mountpoint.."/var/db/services.db "..mountpoint.."/etc/services")
+    local cmd <const> = string.format("services_mkdb -q -o %s/var/db/services.db %s/etc/services", mountpoint, mountpoint)
+    local ok <const>, err <const>, rc <const> = os.execute(cmd)
     if not ok then
         return nil, err, rc
     end
