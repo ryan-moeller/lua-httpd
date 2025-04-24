@@ -20,6 +20,7 @@ local _M <const> = {}
 local fetch <const> = require("fetch")
 local bectl <const> = require("bectl")
 local lfs <const> = require("lfs")
+local nicenum <const> = require("be").nicenum
 
 local function freebsd_version()
     local f <close> = assert(io.popen("freebsd-version", "r"))
@@ -82,8 +83,7 @@ function _M.latest()
     return builddate.."-"..revision
 end
 
--- TODO: progress reporting
-local function fetch_file(url, path)
+local function fetch_file(url, path, fetch_progress)
     local inf <close>, err <const>, code <const> = fetch.get(url)
     if not inf then
         return nil, err, code
@@ -99,6 +99,7 @@ local function fetch_file(url, path)
         if not buf then
             return nil, err, code
         end
+        fetch_progress(#buf)
         if #buf == 0 then
             break
         end
@@ -144,10 +145,17 @@ function _M.update(set_progress)
         description = description..sep..f
         sep = ", "
         progress(description)
+        local fetched = 0
+        function fetch_progress(buflen)
+            fetched = fetched + buflen
+            local size <const> = nicenum(fetched) .. "B"
+            local desc <const> = string.format("%s (%s)", description, size)
+            set_progress(step / steps, desc)
+        end
         local path <const> = archives.."/"..f
         local url <const> = _M.snapshots_site.."/"..f
-        -- TODO: fire off a background task, show progress to user?
-        local ok <const>, err <const>, rc <const> = fetch_file(url, path)
+        local ok <const>, err <const>, rc <const> =
+            fetch_file(url, path, fetch_progress)
         if not ok then
             return nil, err, rc
         end
