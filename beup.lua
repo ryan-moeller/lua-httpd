@@ -84,8 +84,9 @@ function _M.latest()
 end
 
 local function fetch_file(url, path, fetch_progress)
-    local inf <close>, err <const>, code <const> = fetch.get(url)
+    local inf <close>, stat <const>, code <const> = fetch.xget(url)
     if not inf then
+        local err <const> = stat
         return nil, err, code
     end
     local outf <close>, err <const>, code <const> = io.open(path, "w+")
@@ -94,12 +95,15 @@ local function fetch_file(url, path, fetch_progress)
     end
     local bufsize <const> = 16384 -- fetch.c MINBUFSIZE
     inf:setvbuf("full", bufsize)
+    local fetched = 0
+    local target <const> = stat.size
     repeat
         local buf <const>, err <const>, code <const> = inf:read(bufsize)
         if not buf then
             return nil, err, code
         end
-        fetch_progress(#buf)
+        fetched = fetched + #buf
+        fetch_progress(fetched, target)
         if #buf == 0 then
             break
         end
@@ -145,12 +149,18 @@ function _M.update(set_progress)
         description = description..sep..f
         sep = ", "
         progress(description)
-        local fetched = 0
-        function fetch_progress(buflen)
-            fetched = fetched + buflen
+        function fetch_progress(fetched, target)
             local size <const> = nicenum(fetched) .. "B"
-            local desc <const> = string.format("%s (%s)", description, size)
-            set_progress(step / steps, desc)
+            if target > 0 then
+                local progress <const> = (step + fetched / target) / steps
+                local targetsize <const> = nicenum(target) .. "B"
+                local desc <const> = string.format("%s (%s/%s)", description, size, targetsize)
+                set_progress(progress, desc)
+            else
+                local progress <const> = step / steps
+                local desc <const> = string.format("%s (%s)", description, size)
+                set_progress(progress, desc)
+            end
         end
         local path <const> = archives.."/"..f
         local url <const> = _M.snapshots_site.."/"..f
