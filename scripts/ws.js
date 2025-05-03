@@ -76,10 +76,14 @@ const handlers = new Map([
             const deleteButton = document.createElement("button");
             deleteButton.classList.add("button", "is-danger");
             deleteButton.innerHTML = trashIconHTML;
-            const r = i; // Save the current value for the following closure.
-            deleteButton.addEventListener("click", () => {
-                be_destroy(r, be.name);
-            });
+            if (be.active) {
+                    deleteButton.setAttribute("disabled", true);
+            } else {
+                const r = i; // Save the current value for the closure below.
+                deleteButton.addEventListener("click", () => {
+                    be_destroy(r, be.name);
+                });
+            }
             del.appendChild(deleteButton);
             ++i;
         }
@@ -106,7 +110,7 @@ const handlers = new Map([
             const deleteButton = document.createElement("button");
             deleteButton.classList.add("button", "is-danger");
             deleteButton.innerHTML = trashIconHTML;
-            const r = i; // Save the current value for the following closure.
+            const r = i; // Save the current value for the closure below.
             deleteButton.addEventListener("click", () => {
                 snap_delete(r, snap.name);
             });
