@@ -49,7 +49,11 @@ function _M.snap_list()
     for _, ent in ipairs(ents) do
         local snap <const> = {}
         snap.name = ent
-        snap.build_date = ent:match("([^-]+)-")
+        local date <const> = ent:match("([^-]+)-")
+        local year <const> = string.sub(date, 1, 4)
+        local month <const> = string.sub(date, 5, 6)
+        local day <const> = string.sub(date, 7, 8)
+        snap.build_date = string.format("%s-%s-%s", year, month, day)
         snap.revision = ent:match("-([^-]+)")
         table.insert(snaps, snap)
     end

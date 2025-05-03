@@ -127,7 +127,7 @@ server:add_route("GET", "^/$", function(request)
                 </table>
               </section>
               <section class="is-hidden py-4" id="snapshots-table">
-                <h2 class="subtitle">Snapshots (Local)</h2>
+                <h2 class="subtitle">Downloaded Snapshot Builds</h2>
                 <table class="table">
                   <thead>
                     <tr>
