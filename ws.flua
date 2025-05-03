@@ -119,7 +119,6 @@ server:add_route("GET", "^/$", function(request)
                     <tr>
                       <th>BE</th>
                       <th>Active</th>
-                      <th>Mountpoint</th>
                       <th>Used</th>
                       <th>Creation</th>
                       <th>Destroy</th>

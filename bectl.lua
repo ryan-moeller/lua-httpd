@@ -41,7 +41,6 @@ function _M.list()
         table.insert(result, {
             name = name,
             active = props[name].active,
-            mountpoint = props[name].mountpoint,
             used = be.nicenum(props[name].used) .. "B",
             creation = props[name].creation,
         })
