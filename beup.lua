@@ -154,14 +154,15 @@ function _M.update(set_progress)
         sep = ", "
         progress(description)
         function fetch_progress(fetched, target)
+            local prevstep <const> = step - 1
             local size <const> = nicenum(fetched) .. "B"
             if target > 0 then
-                local progress <const> = (step + fetched / target) / steps
+                local progress <const> = (prevstep + fetched / target) / steps
                 local targetsize <const> = nicenum(target) .. "B"
                 local desc <const> = string.format("%s (%s/%s)", description, size, targetsize)
                 set_progress(progress, desc)
             else
-                local progress <const> = step / steps
+                local progress <const> = prevstep / steps
                 local desc <const> = string.format("%s (%s)", description, size)
                 set_progress(progress, desc)
             end
