@@ -1,5 +1,11 @@
 {# vim: set et sw=4: #}
 
+{#
+    Copyright (c) 2024-2025 Ryan Moeller <ryan-moeller@att.net>
+
+    SPDX-License-Identifier: ISC
+#}
+
 const CMD_BE_LIST = "be_list";
 const CMD_SNAP_LIST = "snap_list";
 const CMD_LATEST = "latest";
