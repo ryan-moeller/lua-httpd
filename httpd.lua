@@ -1,6 +1,6 @@
 -- vim: set et sw=4:
 --
--- Copyright (c) 2016-2024 Ryan Moeller <ryan-moeller@att.net>
+-- Copyright (c) 2016-2024 Ryan Moeller
 --
 -- SPDX-License-Identifier: ISC
 --
