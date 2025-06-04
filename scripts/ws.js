@@ -128,7 +128,7 @@ const handlers = new Map([
     }],
 
     [CMD_LATEST, (name) => {
-        if (be_find(name)) {
+        if (name === undefined || be_find(name)) {
             const section = document.querySelector("#no-updates");
             section.classList.remove("is-hidden");
         } else {
