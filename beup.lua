@@ -22,7 +22,7 @@ _M.logfile = "/dev/null"
 _M.basedir = "/system"
 _M.branch = freebsd_version()
 _M.distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
-_M.snapshots_site = "https://download.freebsd.org/ftp/snapshots/amd64/amd64/".._M.branch
+_M.snapshots_site = "https://download.freebsd.org/ftp/snapshots/amd64/".._M.branch
 _M.config_files = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
 
 function _M.snap_list()
