@@ -95,7 +95,7 @@ server:add_route("GET", "^/$", function(request)
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>WebSocket Demo</title>
-          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
           <link rel="stylesheet" href="https://unpkg.com/bulmaswatch/{{theme}}/bulmaswatch.min.css">
         </head>
         <body>
