@@ -20,10 +20,15 @@ end
 
 _M.logfile = "/dev/null"
 _M.basedir = "/system"
+_M.snapshots_site = "https://download.freebsd.org/ftp/snapshots"
+_M.arch = "amd64" -- TODO: detect
 _M.branch = freebsd_version()
 _M.distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
-_M.snapshots_site = "https://download.freebsd.org/ftp/snapshots/amd64/".._M.branch
 _M.config_files = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
+
+local function snapshot_file_url(path)
+    return table.concat({_M.snapshots_site, _M.arch, _M.branch, path}, "/")
+end
 
 function _M.snap_list()
     local ents <const> = {}
@@ -57,7 +62,7 @@ function _M.snap_delete(name)
 end
 
 local function fetch_snapshot_meta(name)
-    local f <close>, err <const> = fetch.get(_M.snapshots_site.."/"..name)
+    local f <close>, err <const> = fetch.get(snapshot_file_url(name))
     if not f then
         return nil, err
     end
@@ -158,7 +163,7 @@ function _M.update(set_progress)
             end
         end
         local path <const> = archives.."/"..f
-        local url <const> = _M.snapshots_site.."/"..f
+        local url <const> = snapshot_file_url(f)
         local ok <const>, err <const>, rc <const> =
             fetch_file(url, path, fetch_progress)
         if not ok then
