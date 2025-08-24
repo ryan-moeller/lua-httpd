@@ -12,7 +12,7 @@
 -- http  stream  tcp  nowait  root  /home/ryan/lua-httpd-ws/ws.flua  httpd
 
 package.path = "/home/ryan/lua-httpd-ws/?.lua;" .. package.path
-package.cpath = "/home/ryan/flualibs/lib?/?.so;" .. package.cpath
+package.cpath = "/home/ryan/flualibs/lib?/?.so;/home/ryan/flualibs/?/?.so;" .. package.cpath
 
 local bectl <const> = require("bectl")
 local beup <const> = require("beup")

@@ -11,18 +11,13 @@ local fetch <const> = require("fetch")
 local bectl <const> = require("bectl")
 local lfs <const> = require("lfs")
 local nicenum <const> = require("be").nicenum
-
-local function freebsd_version()
-    local f <close> = assert(io.popen("freebsd-version", "r"))
-    local version <const> = f:read("*a"):match("([^\n]+)")
-    return version
-end
+local sysctl <const> = require("sysctl")
 
 _M.logfile = "/dev/null"
 _M.basedir = "/system"
 _M.snapshots_site = "https://download.freebsd.org/ftp/snapshots"
-_M.arch = "amd64" -- TODO: detect
-_M.branch = freebsd_version()
+_M.arch = sysctl("hw.machine"):value()
+_M.branch = sysctl("kern.osrelease"):value()
 _M.distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
 _M.config_files = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
 
