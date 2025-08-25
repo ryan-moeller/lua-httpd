@@ -31,3 +31,5 @@ function _M.rows()
 end
 
 return _M
+
+-- vim: set et sw=4:
