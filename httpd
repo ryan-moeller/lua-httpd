@@ -21,7 +21,7 @@
 -- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 --
 
-package.path = "/usr/home/ryan/lua-httpd/?.lua;" .. package.path
+package.path = "/home/ryan/lua-httpd/?.lua;" .. package.path
 
 local httpd = require("httpd")
 local template = require("template")
