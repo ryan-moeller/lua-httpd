@@ -209,7 +209,7 @@ function _M.update(set_progress)
         end
     end
 
-    local description = "Copying system config files"
+    local description = "Copying system configuration"
     local sep = ": "
     progress(description)
     for _, f in ipairs(_M.config_files) do
