@@ -52,7 +52,7 @@ end
 
 function _M.snap_delete(name)
     local cmd <const> = string.format("rm -rf %s/%s", _M.basedir, name)
-    local redir <const> = string.format(" >>%s 2>>%s", _M.logfile, _M.logfile)
+    local redir <const> = string.format(" >>%s", _M.logfile)
     assert(os.execute(cmd..redir))
 end
 
@@ -174,7 +174,7 @@ function _M.update(set_progress)
 
     progress("Setting filesystem flags")
     local cmd <const> = string.format("chflags -R noschg %s", mountpoint)
-    local redir <const> = string.format(" >>%s 2>>%s", _M.logfile, _M.logfile)
+    local redir <const> = string.format(" >>%s", _M.logfile)
     local ok <const>, err <const>, rc <const> = os.execute(cmd..redir)
     if not ok then
         return nil, err, rc
@@ -218,8 +218,7 @@ function _M.update(set_progress)
         progress(description)
         -- cat to preserve metadata (etcupdate does it this way)
         local cmd <const> = string.format("cat /etc/%s >%s/etc/%s", f, mountpoint, f)
-        local redir2 <const> = " 2>>".._M.logfile
-        local ok <const>, err <const>, rc <const> = os.execute(cmd..redir2)
+        local ok <const>, err <const>, rc <const> = os.execute(cmd)
         if not ok then
             return nil, err, rc
         end

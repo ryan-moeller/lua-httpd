@@ -15,6 +15,18 @@ package.path = "/home/ryan/lua-httpd-ws/?.lua;" .. package.path
 -- Not needed if flualibs is installed.  Only here for developmet.
 package.cpath = "/home/ryan/flualibs/lib?/?.so;/home/ryan/flualibs/?/?.so;" .. package.cpath
 
+-- inetd by default uses the same socket for stderr as it does for stdin/stdout.
+-- Setting io.stderr does not actually replace stderr of the process.  We have
+-- to do this the hard way.
+do
+    local posix <const> = require("posix")
+    local STDERR_FILENO <const> = 2
+    require("fileno") -- from ryan-moeller/flualibs
+    local f <close> = io.open("/var/log/wsdemo-errors.log", "a+")
+    f:setvbuf("no")
+    assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
+end
+
 local bectl <const> = require("bectl")
 local beup <const> = require("beup")
 local httpd <const> = require("httpd")
@@ -22,6 +34,7 @@ local template <const> = require("template")
 local ucl <const> = require("ucl")
 local ws <const> = require("websocket")
 
+-- Direct log messages to a different log file.
 local logfile <const> = "/var/log/wsdemo.log"
 beup.logfile = logfile
 

@@ -56,7 +56,23 @@ needed.
 A few C libraries are needed to implement the WebSocket protocol (namely
 libmd for SHA1, libroken for base64, and libxor for XOR unmasking).
 
-Debugging during development leaves much to be desired for.  It took me
-an embarrassingly long time to track down that a bectl command run via
-os.execute() was writing to stdout, breaking the WebSocket connection.
-This fragile nature is not ideal, but ultimately the thing does work.
+## Error logging
+
+Inetd populates stdin, stdout, and stderr descriptors with the socket.  This is
+not ideal for error logging, since errors will be sent to the client and break
+the HTTP protocol.  To remedy, [ryan-moeller/flualibs][1] has a `fileno` library
+that can be combined with FreeBSD's `posix.unistd.dup2` as follows:
+
+```lua
+do
+    local posix <const> = require("posix")
+    local STDERR_FILENO <const> = 2
+    require("fileno") -- from ryan-moeller/flualibs
+    local f <close> = io.open("/var/log/httpd-errors.log", "a+")
+    f:setvbuf("no")
+    assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
+end
+```
+
+Placing the above early in your server script will ensure errors are logged to
+a file on the server instead of confusing the client.
