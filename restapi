@@ -6,7 +6,7 @@
 -- http    stream  tcp     nowait  www    /usr/local/sbin/httpd      httpd
 
 --
--- Copyright (c) 2016 Ryan Moeller <ryan@freqlabs.com>
+-- Copyright (c) 2016-2025 Ryan Moeller
 --
 -- Permission to use, copy, modify, and distribute this software for any
 -- purpose with or without fee is hereby granted, provided that the above
