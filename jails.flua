@@ -27,6 +27,7 @@ package.path = basedir .. "/?.lua;" .. package.path
 
 local httpd = require("httpd")
 local template = require("template")
+local ucl <const> = require("ucl")
 
 local jail = require("jail")
 

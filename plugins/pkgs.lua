@@ -10,17 +10,24 @@ _M.cols = {
     --{"www", "WWW"}
 }
 
+local function pkg_query(prop, pkg)
+    local cmd <const> = table.concat({"pkg query", prop, pkg}, " ")
+    local f <close> = assert(io.popen(cmd))
+    return f:read("*a")
+end
+
 function _M.rows()
-    local query = [['{"name": "%n", "origin": "%o", "version": "%v", "comment": "%c", "www": "%w"},']]
-    local f = assert(io.popen("pkg query -a "..query))
-    local t = "["..f:read("*a").."]"
-    f:close()
-    local p = ucl.parser()
-    local res, err = p:parse_string(t)
-    if not res then
-        error(err)
+    local f <close> = assert(io.popen("pkg query -a %n"))
+    local packages = {}
+    for name in f:lines() do
+        package = {
+            name = name,
+            version = pkg_query("%v", name),
+            comment = pkg_query("%c", name),
+        }
+        table.insert(packages, package)
     end
-    return p:get_object()
+    return packages
 end
 
 return _M

@@ -1,3 +1,5 @@
+local ucl <const> = require("ucl")
+
 local _M = {}
 
 _M.title = "Processes"
