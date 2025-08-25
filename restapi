@@ -23,12 +23,23 @@
 
 -- Adjust the following paths as needed.
 server_log_path = "/var/log/httpd.log"
+server_error_log_path = "/var/log/httpd-errors.log"
 demo_db_path = "/var/db/demo/demo.db"
 
 -- This is one way to set the paths for importing additional packages.
 package.cpath = "/usr/pkg/luarocks/lib/lua/5.3/?.so;" .. package.cpath
 package.path = "/usr/pkg/luarocks/share/lua/5.3/?.lua;" .. package.path
 package.path = "/usr/pkg/luarocks/share/lua/5.3/?/init.lua;" .. package.path
+
+-- Redirect stderr to a log file.
+do
+    local posix <const> = require("posix")
+    local STDERR_FILENO <const> = 2
+    require("fileno") -- from ryan-moeller/flualibs
+    local f <close> = io.open(server_error_log_path, "a+")
+    f:setvbuf("no")
+    assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
+end
 
 -- Another way would be to set the LUA_PATH and LUA_CPATH environment
 -- variables in a wrapper shell script, such as:

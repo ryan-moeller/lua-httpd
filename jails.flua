@@ -25,6 +25,16 @@ local basedir = "/home/ryan/lua-httpd"
 
 package.path = basedir .. "/?.lua;" .. package.path
 
+-- Redirect stderr to a log file.
+do
+    local posix <const> = require("posix")
+    local STDERR_FILENO <const> = 2
+    require("fileno") -- from ryan-moeller/flualibs
+    local f <close> = io.open("/var/log/jails-errors.log", "a+")
+    f:setvbuf("no")
+    assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
+end
+
 local httpd = require("httpd")
 local template = require("template")
 local ucl <const> = require("ucl")
