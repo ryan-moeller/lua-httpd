@@ -1,7 +1,4 @@
-local cpath = package.cpath
-package.cpath = "/home/ryan/libkldstat/?.so;" .. cpath
-local kldstat = require("kldstat")
-package.cpath = cpath
+local kldstat <const> = require("kldstat") -- from ryan-moeller/flualibs
 
 local _M = {}
 
