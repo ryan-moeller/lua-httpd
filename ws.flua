@@ -103,6 +103,10 @@ end
 local server <const> = httpd.create_server(logfile)
 
 server:add_route("GET", "^/$", function(request)
+    local headers <const> = {
+        ["Content-Type"] = "text/html; charset=utf-8",
+        ["X-Content-Type-Options"] = "nosniff",
+    }
     local body <const> = template.process([[
       <!DOCTYPE html>
       <html lang="en">
@@ -180,7 +184,7 @@ server:add_route("GET", "^/$", function(request)
         </body>
       </html>
     ]], { theme="darkly" })
-    return { status=200, reason="ok", body=body }
+    return { headers=headers, status=200, reason="ok", body=body }
 end)
 
 server:add_route("GET", "^/ws$", function(request)
