@@ -12,8 +12,6 @@
 -- http  stream  tcp  nowait  root  /home/ryan/lua-httpd-ws/ws.flua  httpd
 
 package.path = "/home/ryan/lua-httpd-ws/?.lua;" .. package.path
--- Not needed if flualibs is installed.  Only here for developmet.
-package.cpath = "/home/ryan/flualibs/lib?/?.so;/home/ryan/flualibs/?/?.so;" .. package.cpath
 
 -- inetd by default uses the same socket for stderr as it does for stdin/stdout.
 -- Setting io.stderr does not actually replace stderr of the process.  We have
