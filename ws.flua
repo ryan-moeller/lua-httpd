@@ -196,7 +196,7 @@ server:add_route("GET", "^/ws$", function(request)
     local key <const> = request.headers["sec-websocket-key"].raw
     local version <const> = request.headers["sec-websocket-version"].raw
     if connection ~= "Upgrade" or upgrade ~= "websocket" or version ~= "13" then
-        log:write("bad request\n");
+        log:write("bad request\n")
         return { status=400, reason="Bad Request", body="can't do that" }
     end
     local headers <const> = {
