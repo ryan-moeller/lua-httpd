@@ -214,7 +214,7 @@ server:add_route("GET", "^/ws$", function(request)
                 ws.send(io.stdout, payload, ws.WS_OP_PONG, ws.WS_FL_FIN)
             elseif opcode == ws.WS_OP_TEXT then
                 buf = buf .. payload
-                if flags & ws.WS_FL_FIN then
+                if flags & ws.WS_FL_FIN ~= 0 then
                     local parser <const> = ucl.parser()
                     local ok <const>, err <const> = parser:parse_string(buf, "json")
                     buf = ""
