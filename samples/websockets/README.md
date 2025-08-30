@@ -17,3 +17,18 @@ pool ("system").  Adjust as needed.
 A few compiled modules are needed to implement the WebSocket protocol (namely
 libmd for SHA1, b64 for base64, and libxor for XOR unmasking).  These modules
 only depend on base system libraries.
+
+## Kqueue
+
+This sample utilizes [kqueue][1] to implement a basic asynchronous event loop
+for processing concurrent tasks.  A task consists of a coroutine for the thread
+of execution and a kevent referencing that coroutine. When the the event is
+triggered, the event loop resumes the coroutine referenced by the kevent.  The
+coroutine can then yield back to the event loop when it is ready to wait for the
+next event.
+
+As concrete examples, this server registers events filtering for readable data
+on the WebSocket fd and on pipe fds connected to child processes handling
+long-running tasks.  This enables concurrent handling of WebSocket client
+requests and ensures the user interface remains responsive during the execution
+of extended operations on the server.
