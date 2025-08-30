@@ -13,90 +13,28 @@
 
 package.path = "/home/ryan/lua-httpd-ws/?.lua;" .. package.path
 
+require("fileno")
+local STDIN_FILENO <const> = 0
+local STDOUT_FILENO <const> = 1
+local STDERR_FILENO <const> = 2
+
 -- inetd by default uses the same socket for stderr as it does for stdin/stdout.
 -- Setting io.stderr does not actually replace stderr of the process.  We have
 -- to do this the hard way.
 do
     local posix <const> = require("posix")
-    local STDERR_FILENO <const> = 2
-    require("fileno") -- from ryan-moeller/flualibs
     local f <close> = io.open("/var/log/wsdemo-errors.log", "a+")
     f:setvbuf("no")
+    -- FIXME: assert is bogus here
     assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
 end
 
-local bectl <const> = require("bectl")
-local beup <const> = require("beup")
 local httpd <const> = require("httpd")
 local template <const> = require("template")
 local ucl <const> = require("ucl")
-local ws <const> = require("websocket")
 
 -- Direct log messages to a different log file.
 local logfile <const> = "/var/log/wsdemo.log"
-beup.logfile = logfile
-
-local CMD_STATUS <const> = "status"
-local CMD_BE_LIST <const> = "be_list"
-local CMD_SNAP_LIST <const> = "snap_list"
-local CMD_LATEST <const> = "latest"
-local CMD_UPDATE <const> = "update"
-local CMD_BE_DESTROY <const> = "be_destroy"
-local CMD_SNAP_DELETE <const> = "snap_delete"
-
-local function do_update()
-    local function send_progress(progress, description)
-        ws.send(io.stdout, ucl.to_json({
-            command = CMD_UPDATE,
-            data = {
-                percent = progress * 100,
-                description = description
-            }
-        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-    end
-    local ok <const>, err <const>, rc <const> = beup.update(send_progress)
-    if not ok then
-        ws.send(io.stdout, ucl.to_json({
-            command = CMD_UPDATE,
-            data = {
-                error = err,
-                rc = rc
-            }
-        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-    end
-end
-
-local function ws_handler(msg)
-    if msg.command == CMD_STATUS then
-        ws.send(io.stdout, ucl.to_json({
-            status = "ok"
-        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-    elseif msg.command == CMD_BE_LIST then
-        ws.send(io.stdout, ucl.to_json({
-            command = CMD_BE_LIST,
-            data = bectl.list()
-        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-    elseif msg.command == CMD_SNAP_LIST then
-        ws.send(io.stdout, ucl.to_json({
-            command = CMD_SNAP_LIST,
-            data = beup.snap_list()
-        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-    elseif msg.command == CMD_LATEST then
-        ws.send(io.stdout, ucl.to_json({
-            command = CMD_LATEST,
-            data = beup.latest()
-        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-    elseif msg.command == CMD_UPDATE then
-        do_update()
-    elseif msg.command == CMD_BE_DESTROY then
-        bectl.umount(msg.data.be)
-        bectl.destroy(msg.data.be)
-    elseif msg.command == CMD_SNAP_DELETE then
-        beup.snap_delete(msg.data.snap)
-    else
-        log:write("unhandled message: ", ucl.to_json({msg}), "\n")
-    end
-end
 
 local server <const> = httpd.create_server(logfile)
 
@@ -186,6 +124,8 @@ server:add_route("GET", "^/$", function(request)
 end)
 
 server:add_route("GET", "^/ws$", function(request)
+    local ws <const> = require("websocket")
+
     log = request.server.log
     local connection
     for val in request.headers["connection"].raw:gmatch("([^%s,]+)") do
@@ -206,32 +146,158 @@ server:add_route("GET", "^/ws$", function(request)
         ["Upgrade"] = upgrade,
         ["Sec-WebSocket-Accept"] = ws.accept(key),
     }
-    local function ws_main()
-        local buf = ""
-        repeat
-            local payload <const>, len <const>, opcode <const>, flags <const> = ws.receive(io.stdin)
-            if opcode == ws.WS_OP_CLOSE then
-                break
-            elseif opcode == ws.WS_OP_PING then
-                ws.send(io.stdout, payload, ws.WS_OP_PONG, ws.WS_FL_FIN)
-            elseif opcode == ws.WS_OP_TEXT then
-                buf = buf .. payload
-                if flags & ws.WS_FL_FIN ~= 0 then
-                    local parser <const> = ucl.parser()
-                    local ok <const>, err <const> = parser:parse_string(buf, "json")
-                    buf = ""
-                    if not ok then
-                        log:write("parser error: ", err, "\n")
-                        ws.send(io.stdout, "internal server error", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
-                        break
-                    end
-                    local msg <const> = parser:get_object()
-                    ws_handler(msg)
-                end
-            else
-                log:write("unhandled op: ", opcode, "\n")
+    local function ws_main(output)
+        local bectl <const> = require("bectl")
+        local beup <const> = require("beup")
+        local kqueue <const> = require("kqueue")
+
+        beup.logfile = logfile
+
+        local kq <const> = assert(kqueue.kqueue())
+        local threads <const> = {} -- XXX: coroutines have to outlive events
+        local changelist
+
+        local CMD_STATUS <const> = "status"
+        local CMD_BE_LIST <const> = "be_list"
+        local CMD_SNAP_LIST <const> = "snap_list"
+        local CMD_LATEST <const> = "latest"
+        local CMD_UPDATE <const> = "update"
+        local CMD_BE_DESTROY <const> = "be_destroy"
+        local CMD_SNAP_DELETE <const> = "snap_delete"
+
+        local function do_update()
+            local function send_progress(progress, description)
+                ws.send(output, ucl.to_json({
+                    command = CMD_UPDATE,
+                    data = {
+                        percent = progress * 100,
+                        description = description
+                    }
+                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
             end
-        until false
+            local ok <const>, err <const>, rc <const> = beup.update(send_progress)
+            if not ok then
+                ws.send(output, ucl.to_json({
+                    command = CMD_UPDATE,
+                    data = {
+                        error = err,
+                        rc = rc
+                    }
+                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+            end
+        end
+
+        local handlers <const> = {
+            [CMD_STATUS] = function(msg)
+                ws.send(output, ucl.to_json({
+                    status = "ok"
+                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                return true
+            end,
+            [CMD_BE_LIST] = function(msg)
+                ws.send(output, ucl.to_json({
+                    command = msg.command,
+                    data = bectl.list()
+                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                return true
+            end,
+            [CMD_SNAP_LIST] = function(msg)
+                ws.send(output, ucl.to_json({
+                    command = msg.command,
+                    data = beup.snap_list()
+                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                return true
+            end,
+            [CMD_LATEST] = function(msg)
+                ws.send(output, ucl.to_json({
+                    command = msg.command,
+                    data = beup.latest()
+                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                return true
+            end,
+            [CMD_UPDATE] = function(msg)
+                do_update()
+                return true
+            end,
+            [CMD_BE_DESTROY] = function(msg)
+                bectl.umount(msg.data.be)
+                bectl.destroy(msg.data.be)
+                return true
+            end,
+            [CMD_SNAP_DELETE] = function(msg)
+                beup.snap_delete(msg.data.snap)
+                return true
+            end,
+        }
+        local ws_thread <const> = coroutine.create(function(event)
+            local buf = ""
+            repeat
+                local payload <const>, len <const>, opcode <const>,
+                    flags <const>, consumed <const> = ws.receive(io.stdin)
+                if opcode == ws.WS_OP_CLOSE then
+                    break
+                elseif opcode == ws.WS_OP_PING then
+                    ws.send(output, payload, ws.WS_OP_PONG, ws.WS_FL_FIN)
+                elseif opcode == ws.WS_OP_TEXT then
+                    buf = buf .. payload
+                    if flags & ws.WS_FL_FIN ~= 0 then
+                        local parser <const> = ucl.parser()
+                        local ok <const>, err <const> = parser:parse_string(buf, "json")
+                        buf = ""
+                        if not ok then
+                            log:write("parser error: ", err, "\n")
+                            ws.send(output, "internal server error", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
+                            break
+                        end
+                        local msg <const> = parser:get_object()
+                        if not msg.command then
+                            log:write("invalid message: ", ucl.to_json({msg}), "\n")
+                            ws.send(output, "invalid request", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
+                            break
+                        end
+                        local handler <const> = handlers[msg.command]
+                        if not handler then
+                            log:write("unhandled message: ", ucl.to_json({msg}), "\n")
+                        elseif not handler(msg) then
+                            break
+                        end
+                    end
+                else
+                    log:write("unhandled op: ", opcode, "\n")
+                end
+                -- Yield once we have consumed all the data for this event.
+                if consumed >= event.data then
+                    event = coroutine.yield()
+                else
+                    event.data = event.data - consumed
+                end
+            until false
+        end)
+        changelist = {
+            {
+                ident = io.stdin:fileno(),
+                filter = kqueue.EVFILT_READ,
+                flags = kqueue.EV_ADD,
+                fflags = 0,
+                data = 0,
+                udata = ws_thread
+            }
+        }
+        while coroutine.status(ws_thread) ~= "dead" do
+            local event <const> = assert(kq:kevent(changelist))
+            changelist = nil
+            local ok <const>, err <const>, code <const> =
+                coroutine.resume(event.udata, event)
+            if not ok then
+                log:write(err, code and (" (%d)\n"):format(code) or "\n")
+                log:write(ucl.to_json(event), "\n")
+            end
+        end
+        log:write("websocket closed\n")
+        kq:close()
+        for thread in pairs(threads) do
+            assert(coroutine.close(thread))
+        end
     end
     log:write("switching connection to websocket protocol\n")
     return { headers=headers, status=101, reason="Switching Protocols", body=ws_main }
