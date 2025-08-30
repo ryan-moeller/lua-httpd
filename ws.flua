@@ -165,28 +165,6 @@ server:add_route("GET", "^/ws$", function(request)
         local CMD_BE_DESTROY <const> = "be_destroy"
         local CMD_SNAP_DELETE <const> = "snap_delete"
 
-        local function do_update()
-            local function send_progress(progress, description)
-                ws.send(output, ucl.to_json({
-                    command = CMD_UPDATE,
-                    data = {
-                        percent = progress * 100,
-                        description = description
-                    }
-                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-            end
-            local ok <const>, err <const>, rc <const> = beup.update(send_progress)
-            if not ok then
-                ws.send(output, ucl.to_json({
-                    command = CMD_UPDATE,
-                    data = {
-                        error = err,
-                        rc = rc
-                    }
-                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-            end
-        end
-
         local handlers <const> = {
             [CMD_STATUS] = function(msg)
                 ws.send(output, ucl.to_json({
@@ -216,7 +194,26 @@ server:add_route("GET", "^/ws$", function(request)
                 return true
             end,
             [CMD_UPDATE] = function(msg)
-                do_update()
+                local function send_progress(progress, description)
+                    ws.send(output, ucl.to_json({
+                        command = CMD_UPDATE,
+                        data = {
+                            percent = progress * 100,
+                            description = description
+                        }
+                    }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                end
+                local ok <const>, err <const>, rc <const> =
+                    beup.update(send_progress)
+                if not ok then
+                    ws.send(output, ucl.to_json({
+                        command = CMD_UPDATE,
+                        data = {
+                            error = err,
+                            rc = rc
+                        }
+                    }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                end
                 return true
             end,
             [CMD_BE_DESTROY] = function(msg)
