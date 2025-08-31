@@ -11,7 +11,23 @@
 -- Use with inetd:
 -- http  stream  tcp  nowait  root  /home/ryan/lua-httpd-ws/ws.flua  httpd
 
-package.path = "/home/ryan/lua-httpd-ws/?.lua;" .. package.path
+local posix <const> = require("posix")
+
+local basedir <const> = posix.libgen.dirname(arg[0])
+
+local function path(...)
+    return table.concat(table.pack(...), "/")
+end
+
+local function relpath(...)
+    return path(basedir, ...)
+end
+
+package.path = table.concat({relpath("?.lua"), package.path}, ";")
+
+local logdir <const> = "/var/log"
+local logfile <const> = path(logdir, "wsdemo.log")
+local errfile <const> = path(logdir, "wsdemo-errors.log")
 
 require("fileno")
 local STDIN_FILENO <const> = 0
@@ -22,8 +38,7 @@ local STDERR_FILENO <const> = 2
 -- Setting io.stderr does not actually replace stderr of the process.  We have
 -- to do this the hard way.
 do
-    local posix <const> = require("posix")
-    local f <close> = io.open("/var/log/wsdemo-errors.log", "a+")
+    local f <close> = io.open(errfile, "a+")
     f:setvbuf("no")
     -- FIXME: assert is bogus here
     assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
@@ -32,9 +47,6 @@ end
 local httpd <const> = require("httpd")
 local template <const> = require("template")
 local ucl <const> = require("ucl")
-
--- Direct log messages to a different log file.
-local logfile <const> = "/var/log/wsdemo.log"
 
 local server <const> = httpd.create_server(logfile)
 
