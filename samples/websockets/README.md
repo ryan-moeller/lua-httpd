@@ -32,3 +32,8 @@ on the WebSocket fd and on pipe fds connected to child processes handling
 long-running tasks.  This enables concurrent handling of WebSocket client
 requests and ensures the user interface remains responsive during the execution
 of extended operations on the server.
+
+## Sendfile
+
+This sample demonstrates the use of [sendfile][1] to serve static content from
+the filesystem.  The advantage of sendfile would be greater for larger files.
