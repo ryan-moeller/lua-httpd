@@ -126,12 +126,52 @@ server:add_route("GET", "^/$", function(request)
                     <div class="message-body"></div>
                 </article>
               </section>
-              <script>{(/home/ryan/lua-httpd-ws/scripts/ws.js)}</script>
+              <script src="/scripts/ws.js"></script>
             </div>
           </div>
         </body>
       </html>
     ]], { theme="darkly" })
+    return { headers=headers, status=200, reason="ok", body=body }
+end)
+
+server:add_route("GET", "^/scripts/[^/]+%.js$", function(request)
+    local lfs <const> = require("lfs")
+    local sendfile <const> = require("sendfile")
+
+    log = request.server.log
+    local p <const> = relpath(request.path)
+    local st <const>, err <const>, code <const> = lfs.attributes(p)
+    if not st then
+        log:write(("not found: %s (%d)\n"):format(err, code))
+        return { status=404, reason="Not Found", body="not found" }
+    end
+    if st.mode ~= "file" then
+        log:write("request forbidden\n")
+        return { status=403, reason="Forbidden", body="permission denied" }
+    end
+    local headers <const> = {
+        ["Content-Length"] = st.size,
+        ["Content-Type"] = "text/javascript; charset=utf-8",
+        ["X-Content-Type-Options"] = "nosniff",
+    }
+    local f <const>, err <const>, code <const> = io.open(p, "r")
+    if not f then
+        log:write(("open failed: %s (%d)\n"):format(err, code))
+        if code == 1 then -- EPERM
+            return { status=403, reason="Forbidden", body="permission denied" }
+        elseif code == 2 then -- ENOENT
+            return { status=404, reason="Not Found", body="not found" }
+        else
+            return { status=500, reason="Internal Server Error", body="internal server error" }
+        end
+    end
+    local function body(output)
+        -- The socket is not non-blocking, so we expect a full send.
+        local sbytes <const> = assert(sendfile(f:fileno(), output:fileno(), 0, 0))
+        assert(sbytes == st.size)
+        f:close()
+    end
     return { headers=headers, status=200, reason="ok", body=body }
 end)
 
