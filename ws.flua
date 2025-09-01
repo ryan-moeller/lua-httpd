@@ -216,7 +216,7 @@ server:add_route("GET", "^/ws$", function(request)
                 repeat
                     local data <const> =
                         assert(posix.unistd.read(pipe, event.data))
-                    local eof <const> = data == ""
+                    local eof <const> = event.flags & kqueue.EV_EOF ~= 0
                     buf = buf .. data
                     -- Approximately line-buffered is good enough.
                     if buf:find("\n") or (eof and buf ~= "") then
