@@ -260,6 +260,10 @@ server:add_route("GET", "^/ws$", function(request)
             })
         end
 
+        local function ws_send(t)
+            ws.send(output, ucl.to_json(t, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+        end
+
         local CMD_STATUS <const> = "status"
         local CMD_BE_LIST <const> = "be_list"
         local CMD_SNAP_LIST <const> = "snap_list"
@@ -269,23 +273,15 @@ server:add_route("GET", "^/ws$", function(request)
         local CMD_SNAP_DELETE <const> = "snap_delete"
         local handlers <const> = {
             [CMD_STATUS] = function(msg)
-                ws.send(output, ucl.to_json({
-                    status = "ok"
-                }, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                ws_send{status="ok"}
                 return true
             end,
             [CMD_BE_LIST] = function(msg)
-                ws.send(output, ucl.to_json({
-                    command = msg.command,
-                    data = bectl.list()
-                }, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                ws_send{command=msg.command, data=bectl.list()}
                 return true
             end,
             [CMD_SNAP_LIST] = function(msg)
-                ws.send(output, ucl.to_json({
-                    command = msg.command,
-                    data = beup.snap_list()
-                }, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                ws_send{command=msg.command, data=beup.snap_list()}
                 return true
             end,
             [CMD_LATEST] = function(msg)
@@ -312,10 +308,7 @@ server:add_route("GET", "^/ws$", function(request)
                     function(exit_type, exit_code)
                         assert(exit_type == "exited")
                         if exit_code == 0 then
-                            ws.send(output, ucl.to_json({
-                                command = msg.command,
-                                data = buf,
-                            }, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                            ws_send{command=msg.command, data=buf}
                         end
                     end
                 )
@@ -344,17 +337,11 @@ server:add_route("GET", "^/ws$", function(request)
                     function(data)
                         local parser <const> = ucl.parser()
                         assert(parser:parse_string(data))
-                        ws.send(output, ucl.to_json({
-                            command = msg.command,
-                            data = parser:get_object(),
-                        }, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                        ws_send{command=msg.command, data=parser:get_object()}
                     end,
                     function(exit_type, exit_code)
                         assert(exit_type == "exited")
-                        ws.send(output, ucl.to_json({
-                            command = msg.command,
-                            data = {exit_code=exit_code},
-                        }, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                        ws_send{command=msg.command, data={exit_code=exit_code}}
                     end
                 )
                 return true
