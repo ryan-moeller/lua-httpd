@@ -213,6 +213,53 @@ server:add_route("GET", "^/ws$", function(request)
         local threads <const> = {} -- XXX: coroutines have to outlive events
         local changelist
 
+        -- Approximately line-buffered pipe reader and child waiter.
+        local function handle_child(pipe, pid, ondata, onexit)
+            local thread <const> = coroutine.create(function(event)
+                local buf = ""
+                repeat
+                    local data <const> =
+                        assert(posix.unistd.read(pipe, event.data))
+                    local eof <const> = event.flags & kqueue.EV_EOF ~= 0
+                    buf = buf .. data
+                    -- Approximately line-buffered is good enough.
+                    if buf:find("\n") or (eof and buf ~= "") then
+                        ondata(buf)
+                        buf = ""
+                    end
+                    if not eof then
+                        event = coroutine.yield()
+                    end
+                until eof
+                -- kqueue(2):
+                --   Events which are attached to file descriptors are
+                --   automatically deleted on the last close of the
+                --   descriptor.
+                assert(posix.unistd.close(pipe))
+                -- Now it is safe to trash the thread.
+                threads[coroutine.running()] = nil
+                local _, exit_type <const>, exit_code <const> =
+                    assert(posix.sys.wait.wait(pid))
+                if onexit then
+                    onexit(exit_type, exit_code)
+                end
+            end)
+            -- Save the thread in a scope that survives the kqueue.
+            threads[thread] = true
+            -- Add the event to the kqueue.
+            if not changelist then
+                changelist = {}
+            end
+            table.insert(changelist, {
+                ident = pipe,
+                filter = kqueue.EVFILT_READ,
+                flags = kqueue.EV_ADD,
+                fflags = 0,
+                data = 0,
+                udata = thread
+            })
+        end
+
         local CMD_STATUS <const> = "status"
         local CMD_BE_LIST <const> = "be_list"
         local CMD_SNAP_LIST <const> = "snap_list"
