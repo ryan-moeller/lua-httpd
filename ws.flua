@@ -285,10 +285,37 @@ server:add_route("GET", "^/ws$", function(request)
                 return true
             end,
             [CMD_LATEST] = function(msg)
-                ws.send(output, ucl.to_json({
-                    command = msg.command,
-                    data = beup.latest()
-                }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                -- This can take a while since it has to hit the Internet.
+                -- Do it in a child process to avoid blocking the event loop.
+                local r <const>, w <const> = assert(posix.unistd.pipe())
+                local pid <const> = assert(posix.unistd.fork())
+                if pid == 0 then
+                    assert(posix.unistd.close(r))
+                    assert(posix.unistd.close(STDIN_FILENO))
+                    assert(posix.unistd.close(STDOUT_FILENO))
+                    local data <const> = assert(beup.latest())
+                    assert(posix.unistd.write(w, data))
+                    os.exit(0)
+                end
+                assert(posix.unistd.close(w))
+                -- We'll buffer the data until we have the full response.
+                -- It should only take one read for this task, though.
+                local buf = ""
+                handle_child(r, pid,
+                    function(data)
+                        buf = buf .. data
+                    end,
+                    function(exit_type, exit_code)
+                        assert(exit_type == "exited")
+                        if exit_code == 0 then
+                            ws.send(output, ucl.to_json({
+                                command = msg.command,
+                                data = buf,
+                            }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                        end
+                    end
+                )
+                -- TODO: we could ack to trigger a spinner here
                 return true
             end,
             [CMD_UPDATE] = function(msg)
