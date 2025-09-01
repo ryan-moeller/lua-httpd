@@ -323,26 +323,40 @@ server:add_route("GET", "^/ws$", function(request)
                 return true
             end,
             [CMD_UPDATE] = function(msg)
-                local function send_progress(progress, description)
-                    ws.send(output, ucl.to_json({
-                        command = CMD_UPDATE,
-                        data = {
+                local r <const>, w <const> = assert(posix.unistd.pipe())
+                local pid <const> = assert(posix.unistd.fork())
+                if pid == 0 then
+                    assert(posix.unistd.close(r))
+                    assert(posix.unistd.close(STDIN_FILENO))
+                    assert(posix.unistd.close(STDOUT_FILENO))
+                    local function callback(progress, description)
+                        local data <const> = ucl.to_json({
                             percent = progress * 100,
-                            description = description
-                        }
-                    }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                            description = description,
+                        })
+                        assert(posix.unistd.write(w, data .. "\n"))
+                    end
+                    assert(beup.update(callback))
+                    os.exit(0)
                 end
-                local ok <const>, err <const>, rc <const> =
-                    beup.update(send_progress)
-                if not ok then
-                    ws.send(output, ucl.to_json({
-                        command = CMD_UPDATE,
-                        data = {
-                            error = err,
-                            rc = rc
-                        }
-                    }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
-                end
+                assert(posix.unistd.close(w))
+                handle_child(r, pid,
+                    function(data)
+                        local parser <const> = ucl.parser()
+                        assert(parser:parse_string(data))
+                        ws.send(output, ucl.to_json({
+                            command = msg.command,
+                            data = parser:get_object(),
+                        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                    end,
+                    function(exit_type, exit_code)
+                        assert(exit_type == "exited")
+                        ws.send(output, ucl.to_json({
+                            command = msg.command,
+                            data = {exit_code=exit_code},
+                        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+                    end
+                )
                 return true
             end,
             [CMD_BE_DESTROY] = function(msg)
