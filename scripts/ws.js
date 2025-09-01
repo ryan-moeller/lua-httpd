@@ -141,22 +141,20 @@ const handlers = new Map([
     }],
 
     [CMD_UPDATE, (progress) => {
-        if (progress.error) {
-            const message = document.querySelector("#updating-error");
-            if (progress.rc) {
-                const header = message.querySelector("div.message-header");
-                const em = header.querySelector("em");
-                em.innerText = `${progress.rc}`;
-            }
-            const text = message.querySelector("div.message-body");
-            text.innerText = progress.error;
-            message.classList.remove("is-hidden");
-        } else {
+        if (progress.exit_code === undefined) {
             const section = document.querySelector("#updating");
             const caption = section.querySelector("p");
             caption.innerText = progress.description;
             const bar = section.querySelector("progress");
             bar.value = progress.percent;
+        } else if (progress.exit_code != 0) {
+            const message = document.querySelector("#updating-error");
+            const header = message.querySelector("div.message-header");
+            const em = header.querySelector("em");
+            em.innerText = `${progress.exit_code}`;
+            const text = message.querySelector("div.message-body");
+            text.innerText = "Please check the error log for details.";
+            message.classList.remove("is-hidden");
         }
     }]
 ]);
