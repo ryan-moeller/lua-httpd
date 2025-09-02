@@ -29,33 +29,31 @@ end
 
 function _M.receive(input)
     local consumed = 0
-    local hdr0 <const> = input:read(2)
+    local hdr0 <const> = assert(input:read(2))
     consumed = consumed + #hdr0
     local byte0 <const>, byte1 <const> = string.unpack("BB", hdr0)
     local flags <const> = (byte0 >> 4) & 0xf
     local opcode <const> = byte0 & 0xf
     local masked <const> = (byte1 >> 7) & 0x1
-    if not masked then
-        return nil, "invalid ws header"
-    end
+    assert(masked == 1)
     local len = byte1 & 0x7f
     if len == 126 then
-        local hdr1 <const> = input:read(2)
+        local hdr1 <const> = assert(input:read(2))
         consumed = consumed + #hdr1
         len = string.unpack(">I2", hdr1)
     elseif len == 127 then
-        local hdr1 <const> = input:read(8)
+        local hdr1 <const> = assert(input:read(8))
         consumed = consumed + #hdr1
         len = string.unpack(">I8", hdr1)
     end
-    local hdr2 <const> = input:read(4)
+    local hdr2 <const> = assert(input:read(4))
     consumed = consumed + #hdr2
     local key0 <const>, key1 <const>, key2 <const>, key3 <const>, _ = string.unpack("BBBB", hdr2)
     local key <const> = { key0, key1, key2, key3 }
     if len == 0 then
         return nil, len, opcode, flags, consumed
     end
-    local payload <const> = input:read(len)
+    local payload <const> = assert(input:read(len))
     return xor.apply(payload, key), len, opcode, flags, consumed + #payload
 end
 
