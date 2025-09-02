@@ -355,8 +355,8 @@ server:add_route("GET", "^/ws$", function(request)
         local ws_thread <const> = coroutine.create(function(event)
             local buf = ""
             repeat
-                local payload <const>, len <const>, opcode <const>,
-                    flags <const>, consumed <const> = ws.receive(io.stdin)
+                local payload <const>, opcode <const>, flags <const>,
+                    consumed <const> = ws.receive(io.stdin)
                 if opcode == ws.WS_OP_CLOSE then
                     break
                 elseif opcode == ws.WS_OP_PING then
