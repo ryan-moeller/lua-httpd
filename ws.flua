@@ -362,7 +362,9 @@ server:add_route("GET", "^/ws$", function(request)
                 elseif opcode == ws.WS_OP_PING then
                     ws.send(output, payload, ws.WS_OP_PONG, ws.WS_FL_FIN)
                 elseif opcode == ws.WS_OP_TEXT then
-                    buf = buf .. payload
+                    if payload then
+                        buf = buf .. payload
+                    end
                     if flags & ws.WS_FL_FIN ~= 0 then
                         local parser <const> = ucl.parser()
                         local ok <const>, err <const> = parser:parse_string(buf, "json")
