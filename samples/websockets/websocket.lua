@@ -50,10 +50,10 @@ function _M.receive(input)
     local key0 <const>, key1 <const>, key2 <const>, key3 <const>, _ = string.unpack("BBBB", hdr2)
     local key <const> = { key0, key1, key2, key3 }
     if len == 0 then
-        return nil, len, opcode, flags, consumed
+        return nil, opcode, flags, consumed
     end
     local payload <const> = assert(input:read(len))
-    return xor.apply(payload, key), len, opcode, flags, consumed + #payload
+    return xor.apply(payload, key), opcode, flags, consumed + len
 end
 
 function _M.send(output, payload, opcode, flags)
