@@ -48,11 +48,11 @@ function _M.receive(input)
     end
     local hdr2 <const> = assert(input:read(4))
     consumed = consumed + #hdr2
-    local key0 <const>, key1 <const>, key2 <const>, key3 <const>, _ = string.unpack("BBBB", hdr2)
-    local key <const> = { key0, key1, key2, key3 }
     if len == 0 then
         return nil, opcode, flags, consumed
     end
+    local key0 <const>, key1 <const>, key2 <const>, key3 <const>, _ = string.unpack("BBBB", hdr2)
+    local key <const> = { key0, key1, key2, key3 }
     local payload <const> = assert(input:read(len))
     return xor.apply(payload, key), opcode, flags, consumed + len
 end
