@@ -7,7 +7,7 @@
 
 local _M <const> = {}
 
-local b64 <const> = require("roken")
+local b64 <const> = require("b64")
 local md <const> = require("md")
 local xor <const> = require("xor")
 

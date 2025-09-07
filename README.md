@@ -55,8 +55,9 @@ Some peculiarities of my environment are hardcoded, such as the location
 of my built flualibs and the name of my root pool ("system").  Adjust as
 needed.
 
-A few C libraries are needed to implement the WebSocket protocol (namely
-libmd for SHA1, libroken for base64, and libxor for XOR unmasking).
+A few compiled modules are needed to implement the WebSocket protocol (namely
+libmd for SHA1, b64 for base64, and libxor for XOR unmasking).  These modules
+only depend on base system libraries.
 
 ## Error logging
 
