@@ -337,7 +337,7 @@ server:add_route("GET", "^/ws$", function(request)
                     end,
                     function(exit_type, exit_code)
                         assert(exit_type == "exited")
-                        ws_send{command=msg.command, exit_code=exit_code}
+                        ws_send{command=msg.command, data={exit_code=exit_code}}
                     end
                 )
                 return true
