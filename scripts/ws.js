@@ -127,7 +127,12 @@ const handlers = new Map([
     }],
 
     [CMD_LATEST, (name) => {
-        if (name === undefined || be_find(name)) {
+        if (name === undefined || name.error !== undefined) {
+            const section = document.querySelector("#latest-error");
+            const p = section.querySelector("p");
+            p.innerText = "Error fetching snapshot metadata: " + name.error;
+            section.classList.remove("is-hidden");
+        } else if (be_find(name)) {
             const section = document.querySelector("#no-updates");
             section.classList.remove("is-hidden");
         } else {
