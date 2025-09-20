@@ -101,6 +101,10 @@ server:add_route("GET", "^/$", function(request)
                   </thead>
                 </table>
               </section>
+              <section class="is-hidden is-danger py-4" id="latest-error">
+                <h2 class="subtitle">Updates</h2>
+                <p class="notification is-danger"></p>
+              </section>
               <section class="is-hidden py-4" id="no-updates">
                 <h2 class="subtitle">Updates</h2>
                 <p>The latest snapshot is installed.</p>
@@ -293,7 +297,11 @@ server:add_route("GET", "^/ws$", function(request)
                     assert(posix.unistd.close(r))
                     assert(posix.unistd.close(STDIN_FILENO))
                     assert(posix.unistd.close(STDOUT_FILENO))
-                    local data <const> = assert(beup.latest())
+                    local data <const>, err <const> = beup.latest()
+                    if not data then
+                        assert(posix.unistd.write(w, err))
+                        os.exit(1)
+                    end
                     assert(posix.unistd.write(w, data))
                     os.exit(0)
                 end
@@ -309,6 +317,8 @@ server:add_route("GET", "^/ws$", function(request)
                         assert(exit_type == "exited")
                         if exit_code == 0 then
                             ws_send{command=msg.command, data=buf}
+                        else
+                            ws_send{command=msg.command, data={error=buf}}
                         end
                     end
                 )
