@@ -151,7 +151,11 @@ local function all_jail_params_dict()
     local formats = {
         ["A"] = {
             type = "string",
-            validate = function(s) return s:match(".*") end
+            validate = function(s) return true end
+        },
+        ["A,keyvalue"] = {
+            type = "keyvalue",
+            validate = function(s) return true end
         },
         ["B"] = {
             type = "boolean",
