@@ -1,9 +1,8 @@
 #!/usr/libexec/flua
+-- vim: set et sw=2:
 --
--- Minimal web server written in Lua
---
--- Use with inetd, no other dependencies:
--- http    stream  tcp     nowait  www    /usr/local/sbin/httpd      httpd
+-- Use with inetd:
+-- http    stream  tcp     nowait  www    /path/to/lua-httpd/samples/rest/server.flua      rest-server
 
 --
 -- Copyright (c) 2016-2025 Ryan Moeller

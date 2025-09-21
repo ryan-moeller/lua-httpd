@@ -1,9 +1,8 @@
 #!/usr/libexec/flua
 -- vim: set et sw=4:
--- Minimal web server written in Lua
 --
--- Use with inetd, no other dependencies:
--- http    stream  tcp     nowait  root    /usr/local/sbin/httpd      httpd
+-- Use with inetd:
+-- http    stream  tcp     nowait  root    /path/to/lua-httpd/samples/installer/server.flua    installer-server
 
 --
 -- Copyright (c) 2016-2025 Ryan Moeller
@@ -21,11 +20,28 @@
 -- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 --
 
-package.path = "/home/ryan/lua-httpd/?.lua;" .. package.path
+local posix <const> = require("posix")
+
+local basedir <const> = posix.libgen.dirname(arg[0])
+
+local function path(...)
+    return table.concat(table.pack(...), "/")
+end
+
+local function relpath(...)
+    return path(basedir, ...)
+end
+
+-- Add import search paths for the modules in this repo.
+package.path = table.concat({
+    relpath("../../?.lua"),             -- httpd.lua
+    relpath("../contrib/?.lua"),        -- samples/contrib/template.lua
+    relpath("?.lua"),                   -- samples/installer/*.lua
+    package.path
+}, ";")
 
 -- Redirect stderr to a log file.
 do
-    local posix <const> = require("posix")
     local STDERR_FILENO <const> = 2
     require("fileno") -- from ryan-moeller/flualibs
     local f <close> = io.open("/var/log/httpd-errors.log", "a+")
