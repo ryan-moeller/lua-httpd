@@ -44,7 +44,7 @@ package.path = table.concat({
 do
     local STDERR_FILENO <const> = 2
     require("fileno") -- from ryan-moeller/flualibs
-    local f <close> = io.open("/var/log/httpd-errors.log", "a+")
+    local f <close> = io.open("/var/log/installer-errors.log", "a+")
     f:setvbuf("no")
     assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
 end
@@ -82,7 +82,7 @@ function selected(cond)
     return cond and "selected" or ""
 end
 
-local server = httpd.create_server("/var/log/httpd.log")
+local server = httpd.create_server("/var/log/installer.log")
 server:add_route("GET", "^/(.*)$", function(request)
     local lang = request.matches[1]
     if lang == "" then

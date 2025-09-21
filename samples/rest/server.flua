@@ -21,8 +21,8 @@
 --
 
 -- Adjust the following paths as needed.
-server_log_path = "/var/log/httpd.log"
-server_error_log_path = "/var/log/httpd-errors.log"
+server_log_path = "/var/log/rest.log"
+server_error_log_path = "/var/log/rest-errors.log"
 demo_db_path = "/var/db/demo/demo.db"
 
 -- This is one way to set the paths for importing additional packages.
