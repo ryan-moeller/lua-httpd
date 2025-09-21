@@ -48,11 +48,13 @@ do
     assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
 end
 
-local httpd = require("httpd")
-local template = require("template")
+local httpd <const> = require("httpd")
+local template <const> = require("template")
+
+local jail <const> = require("jail")
 local ucl <const> = require("ucl")
 
-local jail = require("jail")
+local sysctl <const> = require("sysctl") -- from ryan-moeller/flualibs
 
 local theme = "darkly"
 local snapsdir = "/system"
@@ -207,9 +209,6 @@ local function all_jail_params_dict()
             end
         },
     }
-    local f = assert(io.popen("sysctl -F security.jail.param"))
-    local t = f:read("*a")
-    f:close()
     -- Some jail params are handled internally by jail(8)
     local params = {
         ["allow.dying"] = formats["B"],
@@ -243,7 +242,9 @@ local function all_jail_params_dict()
         ["mount.fstab"] = formats["A"],
     }
     -- Other jail params are handled by the kernel/modules
-    for n, f in t:gmatch("security.jail.param.([^:]+)%.?: ([^\n]+)") do
+    for param in sysctl("security.jail.param"):iter() do
+        local n = param:name()
+        local _, f <const> = param:format()
         local format = formats[f]
         if format.type ~= "node" then
             -- Trim trailing '.' character from MIBs to form param names
