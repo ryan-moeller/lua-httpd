@@ -1,23 +1,7 @@
--- vim: set et sw=3:
--- Minimal web server written in Lua
---
--- Use with inetd, no other dependencies:
--- http    stream  tcp     nowait  www    /usr/local/sbin/httpd      httpd
-
 --
 -- Copyright (c) 2016-2025 Ryan Moeller
 --
--- Permission to use, copy, modify, and distribute this software for any
--- purpose with or without fee is hereby granted, provided that the above
--- copyright notice and this permission notice appear in all copies.
---
--- THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
--- WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
--- MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
--- ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
--- WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
--- ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
--- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+-- SPDX-License-Identifier: ISC
 --
 
 local M = {}
@@ -413,6 +397,10 @@ function M.create_server(logfile)
    return server
 end
 
+
 M.parse_query_string = parse_request_query
 
+
 return M
+
+-- vim: set et sw=3:
