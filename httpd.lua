@@ -48,7 +48,6 @@ local function decode(s)
 end
 
 
---[[
 local function encode(s)
    local function hex(char)
       return string.format("%%%02X", string.byte(char))
@@ -57,9 +56,9 @@ local function encode(s)
    s = string.gsub(s, "\n", "\r\n")
    s = string.gsub(s, "([^%w %-%_%.%~])", hex)
    s = string.gsub(s, " ", "+")
+
    return s
 end
-]]--
 
 
 local function parse_request_query(query)
@@ -399,6 +398,8 @@ end
 
 
 M.parse_query_string = parse_request_query
+M.percent_decode = decode
+M.percent_encode = encode
 
 
 return M
