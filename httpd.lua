@@ -1,4 +1,4 @@
--- vim: set et sw=4:
+-- vim: set et sw=3:
 -- Minimal web server written in Lua
 --
 -- Use with inetd, no other dependencies:
