@@ -299,14 +299,15 @@ end
 
 
 local function parse_header_value(header, value)
+   header.raw = value
+
    local function parse(attrib)
+      table.insert(header.list, attrib)
       local key, value = string.match(attrib, "^%s*(.*)=(.*)%s*$")
       if key then
          local attrval = header.dict[key] or {}
          table.insert(attrval, value)
          header.dict[key] = attrval
-      else
-         table.insert(header.list, attrib)
       end
    end
 
