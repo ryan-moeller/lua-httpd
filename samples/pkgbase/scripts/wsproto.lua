@@ -1,0 +1,11 @@
+-- Copyright (c) 2025 Ryan Moeller
+--
+-- SPDX-License-Identifier: ISC
+
+CMD_WORKTREE_LIST = "WORKTREE_LIST"
+CMD_WORKTREE_PULL = "WORKTREE_PULL"
+CMD_REPO_LIST = "REPO_LIST"
+CMD_REPO_BUILD = "REPO_BUILD"
+CMD_REPO_DELETE = "REPO_DELETE"
+
+-- vim: set et sw=4:

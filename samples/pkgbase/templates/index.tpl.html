@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<!--
+  Copyright (c) 2025 Ryan Moeller
+
+  SPDX-License-Identifier: ISC
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FreeBSD Package Base Builder</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
+  </head>
+  <body>
+    <section class="section">
+      <div class="container">
+        <h1 class="title">FreeBSD Package Base Builder</h1>
+        <p class="subtitle">
+          WebUI for building <strong>FreeBSD</strong> pkgbase repos
+        </p>
+        <div class="block">
+          <label class="label is-inline">SRCTOP=</label>
+          {{srctop}}
+          <br/>
+          <label class="label is-inline">MAKEOBJDIRPREFIX=</label>
+          {{makeobjdirprefix}}
+          <br/>
+          <label class="label is-inline">KERNCONF=</label>
+          {{kernconf}}
+        </div>
+      </div>
+    </section>
+    <script type="module" src="scripts/client.js"></script>
+  </body>
+</html>
+<!-- vim: set et sw=2: -->
