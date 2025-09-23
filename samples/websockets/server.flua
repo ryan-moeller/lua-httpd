@@ -1,0 +1,261 @@
+#!/usr/libexec/flua
+--
+-- Copyright (c) 2016-2025 Ryan Moeller
+--
+-- SPDX-License-Identifier: ISC
+--
+
+--
+-- Use with inetd:
+-- http  stream  tcp  nowait  root  /path/to/lua-httpd/samples/websockets/server.flua  websockets-server
+--
+
+local posix <const> = require("posix")
+
+local basedir <const> = posix.libgen.dirname(arg[0])
+
+local function path(...)
+    return table.concat(table.pack(...), "/")
+end
+
+local function relpath(...)
+    return path(basedir, ...)
+end
+
+package.path = table.concat({
+    relpath("../../?.lua"),             -- httpd.lua
+    relpath("../contrib/?.lua"),        -- samples/contrib/template.lua
+    relpath("?.lua"),                   -- samples/websockets/*.lua
+    package.path
+}, ";")
+
+local logdir <const> = "/var/log"
+local logfile <const> = path(logdir, "wsdemo.log")
+local errfile <const> = path(logdir, "wsdemo-errors.log")
+
+-- inetd by default uses the same socket for stderr as it does for stdin/stdout.
+-- Setting io.stderr does not actually replace stderr of the process.  We have
+-- to do this the hard way.
+do
+    local STDERR_FILENO <const> = 2
+    require("fileno") -- from ryan-moeller/flualibs
+    local f <close> = io.open(errfile, "a+")
+    f:setvbuf("no")
+    assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
+end
+
+local bectl <const> = require("bectl")
+local beup <const> = require("beup")
+local httpd <const> = require("httpd")
+local template <const> = require("template")
+local ucl <const> = require("ucl")
+local ws <const> = require("websocket")
+
+beup.logfile = logfile
+
+local CMD_STATUS <const> = "status"
+local CMD_BE_LIST <const> = "be_list"
+local CMD_SNAP_LIST <const> = "snap_list"
+local CMD_LATEST <const> = "latest"
+local CMD_UPDATE <const> = "update"
+local CMD_BE_DESTROY <const> = "be_destroy"
+local CMD_SNAP_DELETE <const> = "snap_delete"
+
+local function do_update()
+    local function send_progress(progress, description)
+        ws.send(io.stdout, ucl.to_json({
+            command = CMD_UPDATE,
+            data = {
+                percent = progress * 100,
+                description = description
+            }
+        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+    end
+    local ok <const>, err <const>, rc <const> = beup.update(send_progress)
+    if not ok then
+        ws.send(io.stdout, ucl.to_json({
+            command = CMD_UPDATE,
+            data = {
+                error = err,
+                rc = rc
+            }
+        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+    end
+end
+
+local function ws_handler(msg)
+    if msg.command == CMD_STATUS then
+        ws.send(io.stdout, ucl.to_json({
+            status = "ok"
+        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+    elseif msg.command == CMD_BE_LIST then
+        ws.send(io.stdout, ucl.to_json({
+            command = CMD_BE_LIST,
+            data = bectl.list()
+        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+    elseif msg.command == CMD_SNAP_LIST then
+        ws.send(io.stdout, ucl.to_json({
+            command = CMD_SNAP_LIST,
+            data = beup.snap_list()
+        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+    elseif msg.command == CMD_LATEST then
+        ws.send(io.stdout, ucl.to_json({
+            command = CMD_LATEST,
+            data = beup.latest()
+        }), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+    elseif msg.command == CMD_UPDATE then
+        do_update()
+    elseif msg.command == CMD_BE_DESTROY then
+        bectl.umount(msg.data.be)
+        bectl.destroy(msg.data.be)
+    elseif msg.command == CMD_SNAP_DELETE then
+        beup.snap_delete(msg.data.snap)
+    else
+        log:write("unhandled message: ", ucl.to_json({msg}), "\n")
+    end
+end
+
+local server <const> = httpd.create_server(logfile)
+
+server:add_route("GET", "^/$", function(request)
+    local headers <const> = {
+        ["Content-Type"] = "text/html; charset=utf-8",
+        ["X-Content-Type-Options"] = "nosniff",
+    }
+    local body <const> = template.process([[
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>WebSocket Demo</title>
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
+          <link rel="stylesheet" href="https://unpkg.com/bulmaswatch/{{theme}}/bulmaswatch.min.css">
+        </head>
+        <body>
+          <div class="columns is-centered">
+            <div class="column is-narrow">
+              <h1 class="title"><span class="has-text-danger">WebSocket</span> Demo</h1>
+              <section class="is-hidden py-4" id="boot-envs-table">
+                <h2 class="subtitle">Boot Environments</h2>
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>BE</th>
+                      <th>Active</th>
+                      <th>Used</th>
+                      <th>Creation</th>
+                      <th>Destroy</th>
+                    </tr>
+                  </thead>
+                </table>
+              </section>
+              <section class="is-hidden py-4" id="snapshots-table">
+                <h2 class="subtitle">Downloaded Snapshot Builds</h2>
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Build Date</th>
+                      <th>Revision</th>
+                      <th>Path</th>
+                      <th>BE?</th>
+                      <th>Delete</th>
+                    </tr>
+                  </thead>
+                </table>
+              </section>
+              <section class="is-hidden py-4" id="no-updates">
+                <h2 class="subtitle">Updates</h2>
+                <p>The latest snapshot is installed.</p>
+              </section>
+              <section class="is-hidden py-4" id="update-available">
+                <h2 class="subtitle">Updates</h2>
+                <p><em>A new snapshot is available!</em></p>
+                <form action="javascript:update()">
+                  <div class="field">
+                    <label class="label"></label>
+                    <div class="control">
+                      <button class="button is-primary" type="submit" name="latest">
+                        Create Updated Boot Environment
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </section>
+              <section class="is-hidden py-4" id="updating">
+                <h2 class="subtitle">Updating...</h2>
+                <progress class="progress" value="0" max="100">0%</progress>
+                <p>Starting download</p>
+                <article class="message is-danger is-hidden" id="updating-error">
+                    <div class="message-header">
+                      <p>Error <em></em></p>
+                    </div>
+                    <div class="message-body"></div>
+                </article>
+              </section>
+              <script>{(/home/ryan/lua-httpd-ws/scripts/ws.js)}</script>
+            </div>
+          </div>
+        </body>
+      </html>
+    ]], { theme="darkly" })
+    return { headers=headers, status=200, reason="ok", body=body }
+end)
+
+server:add_route("GET", "^/ws$", function(request)
+    log = request.server.log
+    local connection
+    for val in request.headers["connection"].raw:gmatch("([^%s,]+)") do
+        if val == "Upgrade" then
+            connection = val
+            break
+        end
+    end
+    local upgrade <const> = request.headers["upgrade"].raw
+    local key <const> = request.headers["sec-websocket-key"].raw
+    local version <const> = request.headers["sec-websocket-version"].raw
+    if connection ~= "Upgrade" or upgrade ~= "websocket" or version ~= "13" then
+        log:write("bad request\n")
+        return { status=400, reason="Bad Request", body="can't do that" }
+    end
+    local headers <const> = {
+        ["Connection"] = connection,
+        ["Upgrade"] = upgrade,
+        ["Sec-WebSocket-Accept"] = ws.accept(key),
+    }
+    local function ws_main()
+        local buf = ""
+        repeat
+            local payload <const>, len <const>, opcode <const>, flags <const> = ws.receive(io.stdin)
+            if opcode == ws.WS_OP_CLOSE then
+                break
+            elseif opcode == ws.WS_OP_PING then
+                ws.send(io.stdout, payload, ws.WS_OP_PONG, ws.WS_FL_FIN)
+            elseif opcode == ws.WS_OP_TEXT then
+                if payload then
+                    buf = buf .. payload
+                end
+                if flags & ws.WS_FL_FIN ~= 0 then
+                    local parser <const> = ucl.parser()
+                    local ok <const>, err <const> = parser:parse_string(buf, "json")
+                    buf = ""
+                    if not ok then
+                        log:write("parser error: ", err, "\n")
+                        ws.send(io.stdout, "internal server error", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
+                        break
+                    end
+                    local msg <const> = parser:get_object()
+                    ws_handler(msg)
+                end
+            else
+                log:write("unhandled op: ", opcode, "\n")
+            end
+        until false
+    end
+    log:write("switching connection to websocket protocol\n")
+    return { headers=headers, status=101, reason="Switching Protocols", body=ws_main }
+end)
+
+server:run(true)
+
+-- vim: set et sw=4:
