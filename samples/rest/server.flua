@@ -1,23 +1,13 @@
 #!/usr/libexec/flua
--- vim: set et sw=2:
---
--- Use with inetd:
--- http    stream  tcp     nowait  www    /path/to/lua-httpd/samples/rest/server.flua      rest-server
-
 --
 -- Copyright (c) 2016-2025 Ryan Moeller
 --
--- Permission to use, copy, modify, and distribute this software for any
--- purpose with or without fee is hereby granted, provided that the above
--- copyright notice and this permission notice appear in all copies.
+-- SPDX-License-Identifier: ISC
 --
--- THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
--- WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
--- MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
--- ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
--- WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
--- ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
--- OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+--
+-- Use with inetd:
+-- http    stream  tcp     nowait  www    /path/to/lua-httpd/samples/rest/server.flua      rest-server
 --
 
 -- Adjust the following paths as needed.
@@ -32,12 +22,12 @@ package.path = "/usr/pkg/luarocks/share/lua/5.3/?/init.lua;" .. package.path
 
 -- Redirect stderr to a log file.
 do
-    local posix <const> = require("posix")
-    local STDERR_FILENO <const> = 2
-    require("fileno") -- from ryan-moeller/flualibs
-    local f <close> = io.open(server_error_log_path, "a+")
-    f:setvbuf("no")
-    assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
+  local posix <const> = require("posix")
+  local STDERR_FILENO <const> = 2
+  require("fileno") -- from ryan-moeller/flualibs
+  local f <close> = io.open(server_error_log_path, "a+")
+  f:setvbuf("no")
+  assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
 end
 
 -- Another way would be to set the LUA_PATH and LUA_CPATH environment
@@ -229,3 +219,5 @@ for _,m in ipairs({
 end
 
 server:run(true)
+
+-- vim: set et sw=2:
