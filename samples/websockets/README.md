@@ -1,3 +1,9 @@
+# FreeBSD Boot Environment Updater
+
+Check for the latest FreeBSD snapshot build archives and manage downloading
+distribution tarballs and creating a boot environments with this web
+application.
+
 ## WebSockets
 
 This sample incorporates [ryan-moeller/flualibs][1] to implement a separate
@@ -10,9 +16,6 @@ snapshot files on the system, with buttons to delete ones no longer
 desired.
 
 [1]: https://github.com/ryan-moeller/flualibs
-
-Some peculiarities of my environment are hardcoded, such the name of my root
-pool ("system").  Adjust as needed.
 
 A few compiled modules are needed to implement the WebSocket protocol (namely
 libmd for SHA1, b64 for base64, and libxor for XOR unmasking).  These modules

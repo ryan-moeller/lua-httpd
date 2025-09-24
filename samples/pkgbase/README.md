@@ -1,3 +1,15 @@
+# FreeBSD Pkgbase Builder Web UI
+
+Build FreeBSD pkgbase repos from git worktrees managed through this web
+application.  The interface lists local worktrees for a git repo and provides
+buttons to pull from the remote branch, build a new repo from the worktree, and
+delete existing builds.
+
+Task output is redirected to the UI for monitoring progress.
+
+Some specifics of my environment are hardcoded, such the path to my src tree.
+Adjust as needed.
+
 ## Wasmoon
 
 This sample uses [wasmoon][1] to enable implementing the client side of the web
@@ -15,6 +27,3 @@ These features all take advantage of system library bindings provided by
 [ryan-moeller/flualibs][2].
 
 [2]: https://github.com/ryan-moeller/flualibs
-
-Some specifics of my environment are hardcoded, such the path to my src tree.
-Adjust as needed.
