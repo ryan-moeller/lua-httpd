@@ -1,7 +1,5 @@
 # Pure Lua httpd
 
-## Name
-
 httpd.lua - simple HTTP server library with zero dependencies (except inetd)
 
 ## Synposis
@@ -9,6 +7,7 @@ httpd.lua - simple HTTP server library with zero dependencies (except inetd)
 Install httpd.lua in your package.path.
 
 Write an executable server script, for example:
+
 `/usr/local/bin/httpd`
 ```lua
 #!/usr/bin/env lua
@@ -21,24 +20,29 @@ end)
 server:run(true)
 ```
 
+On FreeBSD, use the shebang `#!/usr/libexec/flua` to invoke the base system's
+Lua interpreter.  No packages required!
+
 Configure inetd:
+
 `/etc/inetd.conf`
 ```conf
 http    stream  tcp     nowait  www    /usr/local/bin/httpd      httpd
 ```
 
 Prepare the log file:
+
 ```sh
 touch /var/log/httpd.log
 chown www /var/log/httpd.log
 ```
 
-## Description
+## Motivation
 
-I didn't feel like cross-compiling a bunch of stuff for a MIPS router I
-have.  It has Lua interpreter on it, and I like Lua, so I wrote this.
+I didn't feel like cross-compiling a bunch of stuff for a MIPS router.
+It had a Lua interpreter on it, and I like Lua, so I wrote this.
 
-## Error logging
+## Error Logging
 
 Inetd populates stdin, stdout, and stderr descriptors with the socket.  This is
 not ideal for error logging, since errors will be sent to the client and break
