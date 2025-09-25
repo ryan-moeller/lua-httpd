@@ -37,6 +37,79 @@ touch /var/log/httpd.log
 chown www /var/log/httpd.log
 ```
 
+Apply the inetd configuration to start servicing requests:
+
+```sh
+service inetd restart
+```
+
+## Usage
+
+### API
+
+#### `httpd.create_server(logfile) → server`
+
+Create a new HTTP server instance.
+
+* `logfile`: Path to a file where logs will be written.
+* Returns a `server` object.
+
+#### `server:add_route(method, pattern, handler)`
+
+Register a handler for a given HTTP method and Lua pattern.
+
+* `method`: HTTP verb (e.g. `"GET"`, `"POST"`)
+* `pattern`: Lua string pattern matched against the request path
+* `handler`: Function called as `handler(request)` returning a response table
+
+#### `server:run(verbose)`
+
+Run the server. Reads lines from `stdin` and dispatches requests.
+
+* `verbose`: If true, logs each input line to the log file.
+
+### Request Object
+
+Handler functions receive a `request` table with the following fields:
+
+| Field     | Type   | Description                                  |
+| --------- | ------ | -------------------------------------------- |
+| `method`  | string | HTTP method (e.g. `"GET"`)                   |
+| `path`    | string | URL-decoded path component                   |
+| `params`  | table  | Query parameters (`key -> { values }`)       |
+| `version` | string | HTTP version (e.g. `"HTTP/1.1"`)             |
+| `headers` | table  | Request headers (lowercased)                 |
+| `cookies` | table  | Request cookies (`key -> { values }`)        |
+| `body`    | string | Request body (if present)                    |
+| `matches` | table  | Captures from matched Lua pattern (optional) |
+
+### Response Format
+
+Handlers must return a response table:
+
+| Field     | Type               | Description                                |
+| --------- | ------------------ | ------------------------------------------ |
+| `status`  | integer            | HTTP status code (e.g. `200`, `404`)       |
+| `reason`  | string             | Reason phrase (e.g. `"OK"`, `"Not Found"`) |
+| `headers` | table              | Optional headers to include                |
+| `cookies` | table              | Optional cookies to set (`key -> value`)   |
+| `body`    | string or function | Response body or writer function           |
+
+If `body` is a function, it is called with `output` to write the response manually.
+
+### Utility Functions
+
+These functions are also available from the module:
+
+* `httpd.percent_encode(str) → string`
+  Encode a string using percent-encoding.
+
+* `httpd.percent_decode(str) → string`
+  Decode a percent-encoded string.
+
+* `httpd.parse_query_string(query) → table`
+  Parse a URL query string into a table of key → `{ values }`.
+
 ## Motivation
 
 I didn't feel like cross-compiling a bunch of stuff for a MIPS router.
