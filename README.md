@@ -14,7 +14,7 @@ Write an executable server script, for example:
 
 local httpd = require("httpd")
 local server = httpd.create_server("/var/log/httpd.log")
-server:add_route("GET", "/", function(request)
+server:add_route("GET", "^/$", function(request)
     return { status=200, reason="ok", body="hello, world!" }
 end)
 server:run(true)
