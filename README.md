@@ -72,16 +72,31 @@ Run the server. Reads lines from `stdin` and dispatches requests.
 
 Handler functions receive a `request` table with the following fields:
 
-| Field     | Type   | Description                                  |
-| --------- | ------ | -------------------------------------------- |
-| `method`  | string | HTTP method (e.g. `"GET"`)                   |
-| `path`    | string | URL-decoded path component                   |
-| `params`  | table  | Query parameters (`key -> { values }`)       |
-| `version` | string | HTTP version (e.g. `"HTTP/1.1"`)             |
-| `headers` | table  | Request headers (lowercased)                 |
-| `cookies` | table  | Request cookies (`key -> { values }`)        |
-| `body`    | string | Request body (if present)                    |
-| `matches` | table  | Captures from matched Lua pattern (optional) |
+| Field      | Type               | Description                               |
+| ---------- | ------------------ | ----------------------------------------- |
+| `method`   | string             | HTTP method (e.g. `"GET"`)                |
+| `path`     | string             | URL-decoded path component                |
+| `params`   | table              | Query parameters (`key -> { values }`)    |
+| `version`  | string             | HTTP version (e.g. `"HTTP/1.1"`)          |
+| `headers`  | table              | Request headers (lowercased)              |
+| `trailers` | table              | Request trailers (if present, lowercased) |
+| `cookies`  | table              | Request cookies (`key -> { values }`)     |
+| `body`     | string or function | Request body or chunk stream (if present) |
+| `matches`  | table              | Captures or match from route Lua pattern  |
+
+### Chunked Body Stream
+
+If `request.body` is a function, it returns an iterator over the stream chunks:
+
+```lua
+for chunk, extensions_dict, extensions_string in response.body() do
+    -- chunk: bytes
+    -- extensions_dict: table of chunk extensions (name -> { values })
+    -- extensions_string: the raw extensions part of the chunk size header
+end
+```
+
+The body chunks iterator must be consumed for `response.trailers` to be set.
 
 ### Response Format
 
