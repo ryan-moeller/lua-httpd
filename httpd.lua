@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.0.1'
+M.VERSION = '0.0.2'
 
 
 -- HTTP-message = start-line
@@ -21,7 +21,8 @@ M.VERSION = '0.0.1'
 -- we're looking for a start line next.
 local ServerState = {
    START_LINE = 0,
-   HEADER_FIELD = 1
+   HEADER_FIELD = 1,
+   TRAILER_FIELD = 2,
 }
 
 
@@ -223,12 +224,139 @@ local function handle_request(server)
    write_http_response(server, response)
 
    -- Close all open file handles and exit to complete the response.
+   -- TODO: pipelining
    os.exit()
 end
 
 
-local function method_expects_body(method)
-   return method == "POST" or method == "PUT"
+local function parse_header_value(header, value)
+   header.raw = value
+
+   local function parse(attrib)
+      table.insert(header.list, attrib)
+      local key, value = string.match(attrib, "^%s*(.*)=(.*)%s*$")
+      if key then
+         local attrval = header.dict[key] or {}
+         table.insert(attrval, value)
+         header.dict[key] = attrval
+      end
+   end
+
+   string.gsub(value, "([^;]+)", parse)
+
+   return header
+end
+
+
+local function parse_header_field(line)
+   return string.match(line, "^(%g+):%s*(.*)%s*\r$")
+end
+
+
+local function update_trailer(server, name, value)
+   local trailers = server.request.trailers
+   -- Trailer may be repeated to form a list.
+   local trailer = trailers[name] or { dict={}, list={} }
+   trailers[name] = parse_header_value(trailer, value)
+end
+
+
+local function handle_trailer_field(server, line)
+   if line == "\r" then
+      -- When there are no trailers left we get just a blank line.
+      -- That marks the end of this request.
+      return ServerState.START_LINE
+   else
+      local name, value = parse_header_field(line)
+
+      if name then
+         -- Header field names are case-insensitive.
+         local lname = string.lower(name)
+         update_trailer(server, lname, value)
+      else
+         server.log:write("Ignoring invalid trailer: ", line, "\n")
+      end
+
+      -- Look for more trailers.
+      return ServerState.TRAILER_FIELD
+   end
+end
+
+
+local function handle_chunked_message_body(server)
+   if server.verbose then
+      server.log:write("body is chunked\n")
+   end
+   -- For a chunked transfer, the body field of the request object will be a
+   -- function returning an iterator over the chunks, used like:
+   -- for chunk, exts_dict, exts_str in request.body() do
+   --     -- do things
+   -- end
+   -- This enables streaming content without having to fully buffer it.
+   server.request.body = function()
+      return function()
+         local chunk_size_line = server.input:read("*l")
+         if not chunk_size_line then
+            server.log:write("unexpected EOF\n")
+            return
+         end
+         local chunk_size_hex, exts_str = chunk_size_line:match("^(%x+)(.*)\r$")
+         if not chunk_size_hex then
+            server.log:write("invalid chunk size\n")
+            return
+         end
+         local chunk_size = tonumber(chunk_size_hex, 16)
+         if not chunk_size then
+            server.log:write("invalid chunk size\n")
+            return
+         end
+         if server.verbose then
+            server.log:write("chunk size = ", chunk_size, "\n")
+            server.log:write("chunk extensions = ", exts_str, "\n")
+         end
+         if chunk_size == 0 then
+            -- This is the end of the body.  Now read any trailer fields before
+            -- returning control to the handler.
+            server.request.trailers = {}
+            for line in server.input:lines() do
+               server.state = handle_trailer_field(server, line)
+               if server.state ~= ServerState.TRAILER_FIELD then
+                  break
+               end
+            end
+            return
+         end
+         -- TODO: There is probably an upper limit on the size of a read, so
+         -- this would need to read the chunk in parts (and maybe reject
+         -- ludacris chunk sizes, for some value of ludacris) if the chunk is
+         -- too large for one read.
+         local chunk = server.input:read(chunk_size)
+         if not chunk or #chunk ~= chunk_size then
+            server.log:write(
+               ("body chunk size mismatch (expected %d, got %d)\n")
+                  :format(chunk_size, #chunk)
+            )
+            return
+         end
+         local crlf = server.input:read(2)
+         if crlf ~= "\r\n" then
+            server.log:write("invalid chunk-data terminator\n")
+            return
+         end
+         -- It is technically allowed for extension names to be repeated, so
+         -- we provide multiple interpretations of the extensions for
+         -- convenience.
+         local exts_dict = {}
+         for ext in exts_str:gmatch(";([^;]+)") do
+            local name, value = ext:match("([^=]+)=?(.*)")
+            local extension = exts_dict[name] or {}
+            table.insert(extension, value)
+            exts_dict[name] = extension
+         end
+         return chunk, exts_dict, exts_str
+      end
+   end
+   handle_request(server)
 end
 
 
@@ -255,10 +383,16 @@ end
 
 local function handle_blank_line(server)
    local request = server.request
-   local method = request.method
+   local transfer_encoding_header = request.headers['transfer-encoding']
    local content_length_header = request.headers['content-length']
 
-   if method_expects_body(method) and content_length_header then
+   if transfer_encoding_header then
+      if transfer_encoding_header.raw == "chunked" then
+         return handle_chunked_message_body(server)
+      else
+         server.log:write("unsupported transfer-encoding\n")
+      end
+   elseif content_length_header then
       local values = content_length_header.list
       local value = values[#values]
       local content_length = tonumber(value)
@@ -281,35 +415,11 @@ local function set_cookie(server, cookie)
 end
 
 
-local function parse_header_value(header, value)
-   header.raw = value
-
-   local function parse(attrib)
-      table.insert(header.list, attrib)
-      local key, value = string.match(attrib, "^%s*(.*)=(.*)%s*$")
-      if key then
-         local attrval = header.dict[key] or {}
-         table.insert(attrval, value)
-         header.dict[key] = attrval
-      end
-   end
-
-   string.gsub(value, "([^;]+)", parse)
-
-   return header
-end
-
-
 local function update_header(server, name, value)
    local headers = server.request.headers
    -- Header may be repeated to form a list.
    local header = headers[name] or { dict={}, list={} }
    headers[name] = parse_header_value(header, value)
-end
-
-
-local function parse_header_field(line)
-   return string.match(line, "^(%g+):%s*(.*)%s*\r$")
 end
 
 
