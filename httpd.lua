@@ -306,8 +306,10 @@ local function handle_chunked_message_body(server)
             return
          end
          local chunk_size = tonumber(chunk_size_hex, 16)
-         if not chunk_size then
+         if not chunk_size or chunk_size > server.max_chunk_size then
             server.log:write("invalid chunk size\n")
+            -- TODO: There are a ton of these error conditions that should
+            -- send a response before aborting.  Like 413 Payload Too Large...
             return
          end
          if server.verbose then
@@ -326,18 +328,16 @@ local function handle_chunked_message_body(server)
             end
             return
          end
-         -- TODO: There is probably an upper limit on the size of a read, so
-         -- this would need to read the chunk in parts (and maybe reject
-         -- ludacris chunk sizes, for some value of ludacris) if the chunk is
-         -- too large for one read.
-         local chunk = server.input:read(chunk_size)
-         if not chunk or #chunk ~= chunk_size then
-            server.log:write(
-               ("body chunk size mismatch (expected %d, got %d)\n")
-                  :format(chunk_size, #chunk)
-            )
-            return
-         end
+         local chunk = ""
+         repeat
+            local buf = server.input:read(chunk_size - #chunk)
+            if not buf or #buf == 0 then
+               server.log:write("error reading body chunk\n")
+               return
+            end
+            chunk = chunk .. buf
+            assert(#chunk <= chunk_size)
+         until #chunk == chunk_size
          local crlf = server.input:read(2)
          if crlf ~= "\r\n" then
             server.log:write("invalid chunk-data terminator\n")
@@ -464,12 +464,16 @@ local function handle_request_line(server, line)
 end
 
 
+M.default_max_chunk_size = 16 << 20 -- 16 MiB should be enough for anyone.
+
+
 function M.create_server(logfile)
    local server = {
       state = ServerState.START_LINE,
       log = io.open(logfile, "a"),
       input = io.input(),
       output = io.output(),
+      max_chunk_size = M.default_max_chunk_size,
       handlers = {
          -- handlers is a map of method => { location, location, ... }
          -- locations are matched in the order given, first match wins
