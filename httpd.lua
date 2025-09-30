@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.0.3'
+M.VERSION = '0.0.4'
 
 
 -- HTTP-message = start-line
@@ -24,16 +24,6 @@ local ServerState = {
    HEADER_FIELD = 1,
    TRAILER_FIELD = 2,
 }
-
-
--- start-line = request-line / status-line
--- request-line = method SP request-target SP HTTP-version CRLF
--- method = token
-local function parse_start_line(method, line)
-   local pattern = "^" .. method .. " (%g+) (HTTP/1.1)\r$"
-
-   return string.match(line, pattern)
-end
 
 
 local function decode(s)
@@ -94,36 +84,27 @@ local function parse_request_path(s)
    return path, params
 end
 
-
-local methods = {
-   "GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE"
-}
-
 local function handle_start_line(server, line)
-   -- Try to match each known method.
-   for _, method in ipairs(methods) do
-      local rawpath, version = parse_start_line(method, line)
-
-      if rawpath ~= nil then
-         local path, params = parse_request_path(rawpath)
-         server.request = {
-            server = server,
-            method = method,
-            path = path,
-            params = params,
-            version = version,
-            headers = {},
-            cookies = {}
-         }
-
-         return ServerState.HEADER_FIELD
-      end
+   -- start-line = request-line / status-line
+   -- request-line = method SP request-target SP HTTP-version CRLF
+   -- method = token
+   local method, rawpath, version = line:match("^(%g+) (%g+) (HTTP/1.1)\r$")
+   if not method then
+      -- No match.  We'll just log the oddity and try the next line.
+      server.log:write("Invalid start-line in request.\n")
+      return ServerState.START_LINE
    end
-
-   -- No known methods matched.
-   server.log:write("Invalid start-line in request.\n")
-
-   return ServerState.START_LINE
+   local path, params = parse_request_path(rawpath)
+   server.request = {
+      server = server,
+      method = method,
+      path = path,
+      params = params,
+      version = version,
+      headers = {},
+      cookies = {}
+   }
+   return ServerState.HEADER_FIELD
 end
 
 
@@ -209,11 +190,18 @@ end
 local function handle_request(server)
    local request = server.request
    local handlers = server.handlers[request.method]
+   local response
 
    --debug_server(server)
 
-   -- Try to service the request.
-   local response = { status=404, reason="Not Found", body="not found" }
+   -- Check if we implement this method.
+   if not handlers then
+      response = { status=501, reason="Not Implemented", body="not implemented" }
+      goto respond
+   end
+
+   -- Try to find a location matching the request.
+   response = { status=404, reason="Not Found", body="not found" }
    for _, location in ipairs(handlers) do
       local pattern, handler = table.unpack(location)
       local matches = { string.match(request.path, pattern) }
@@ -224,6 +212,7 @@ local function handle_request(server)
       end
    end
 
+   ::respond::
    write_http_response(server, response)
 
    -- Close all open file handles and exit to complete the response.
@@ -485,22 +474,20 @@ function M.create_server(logfile, input, output)
       input = input or io.input(),
       output = output or io.output(),
       max_chunk_size = M.default_max_chunk_size,
+      -- handlers is a map of method => { location, location, ... }
+      -- locations are matched in the order given, first match wins
+      -- a location is an ordered list of { pattern, handler }
+      -- pattern is a Lua pattern for string matching the path
+      -- handler is a function(request) returning a response table
       handlers = {},
    }
 
    server.log:setvbuf("no")
 
-   -- handlers is a map of method => { location, location, ... }
-   -- locations are matched in the order given, first match wins
-   -- a location is an ordered list of { pattern, handler }
-   -- pattern is a Lua pattern for string matching the path
-   -- handler is a function(request) returning a response table
-   for _, method in ipairs(methods) do
-      server.handlers[method] = {}
-   end
-
    function server:add_route(method, pattern, handler)
-      table.insert(self.handlers[method], { pattern, handler })
+      local handlers = self.handlers[method] or {}
+      table.insert(handlers, { pattern, handler })
+      self.handlers[method] = handlers
    end
 
    function server:run(verbose)
