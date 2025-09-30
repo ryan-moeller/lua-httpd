@@ -478,12 +478,12 @@ end
 M.default_max_chunk_size = 16 << 20 -- 16 MiB should be enough for anyone.
 
 
-function M.create_server(logfile)
+function M.create_server(logfile, input, output)
    local server = {
       state = ServerState.START_LINE,
       log = io.open(logfile, "a"),
-      input = io.input(),
-      output = io.output(),
+      input = input or io.input(),
+      output = output or io.output(),
       max_chunk_size = M.default_max_chunk_size,
       handlers = {
          -- handlers is a map of method => { location, location, ... }
