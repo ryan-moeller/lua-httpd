@@ -353,7 +353,7 @@ local function handle_chunked_message_body(server)
          for ext in exts_str:gmatch(";([^;]+)") do
             local name, value = ext:match("([^=]+)=?(.*)")
             local extension = exts_dict[name] or {}
-            table.insert(extension, value)
+            table.insert(extension, #value > 0 and value or true)
             exts_dict[name] = extension
          end
          return chunk, exts_dict, exts_str
