@@ -127,6 +127,19 @@ local function handle_start_line(server, line)
 end
 
 
+-- Helper for writing a list of headers/trailers.
+-- This includes the terminator.
+local function write_headers(output, headers, cookies)
+   for name, value in pairs(headers or {}) do
+      output:write(name, ": ", value, "\r\n")
+   end
+   for name, value in pairs(cookies or {}) do
+      output:write("Set-Cookie: ", name, "=", value, "\r\n")
+   end
+   output:write("\r\n")
+end
+
+
 -- expects a server table and a response table
 -- example response table:
 -- { status=404, reason="not found", headers={}, cookies={},
@@ -147,17 +160,7 @@ local function write_http_response(server, response)
    local statusline = string.format("HTTP/1.1 %03d %s\r\n", status, reason)
    output:write(statusline)
 
-   for name, value in pairs(headers) do
-      local header = string.format("%s: %s\r\n", name, value)
-      output:write(header)
-   end
-
-   for name, value in pairs(cookies) do
-      local cookie = string.format("Set-Cookie: %s=%s\r\n", name, value)
-      output:write(cookie)
-   end
-
-   output:write("\r\n")
+   write_headers(output, headers, cookies)
 
    if type(body) == "string" then
       output:write(body)
@@ -514,6 +517,26 @@ end
 M.parse_query_string = parse_request_query
 M.percent_decode = decode
 M.percent_encode = encode
+
+
+-- Helper for chunk-encoded body transfers
+function M.write_chunk(output, chunk, exts)
+   if exts and #exts > 0 then
+      exts = ";" .. table.concat(exts, ";")
+   else
+      exts = ""
+   end
+   output:write(("%x%s\r\n"):format(#chunk, exts))
+   output:write(chunk)
+   output:write("\r\n")
+end
+
+
+-- Helper for concluding chunk-encoded body transfers
+function M.write_trailers(output, trailers)
+   output:write("0\r\n")
+   write_headers(output, trailers)
+end
 
 
 return M

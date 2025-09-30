@@ -114,6 +114,10 @@ end
 
 The body chunks iterator must be consumed for `response.trailers` to be set.
 
+To send a chunked response body, include a "Transfer-Encoding: chunked" header
+in the response object and use `httpd.write_chunk(output, chunk, exts)` and
+`httpd.write_trailers(output, trailers)` in the reponse body function.
+
 ### Response Format
 
 Handlers must return a response table:
@@ -140,6 +144,14 @@ These functions are also available from the module:
 
 * `httpd.parse_query_string(query) → table`
   Parse a URL query string into a table of key → `{ values }`.
+
+* `httpd.write_chunk(output, chunk, exts)`
+  Encode and write a chunk (bytes), optionally with a list of extensions.  The
+  extensions are given as a list of strings.
+
+* `httpd.write_trailers(output, trailers)`
+  Write the last chunk and optionally trailers in the same format as
+  `response.headers` to conclude the response.
 
 ## Motivation
 
