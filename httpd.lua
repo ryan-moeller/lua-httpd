@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.0.2'
+M.VERSION = '0.0.3'
 
 
 -- HTTP-message = start-line
