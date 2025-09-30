@@ -80,9 +80,25 @@ Handler functions receive a `request` table with the following fields:
 | `version`  | string             | HTTP version (e.g. `"HTTP/1.1"`)          |
 | `headers`  | table              | Request headers (lowercased)              |
 | `trailers` | table              | Request trailers (if present, lowercased) |
-| `cookies`  | table              | Request cookies (`key -> { values }`)     |
+| `cookies`  | table              | Request cookies (`name -> { values }`)    |
 | `body`     | string or function | Request body or chunk stream (if present) |
 | `matches`  | table              | Captures or match from route Lua pattern  |
+
+### Request Headers and Trailers
+
+The `request.headers` and `request.trailers` tables use lowercased names as keys
+and tables with the following structure as values:
+
+| Field  | Type   | Description                                                |
+| ------ | ------ | ---------------------------------------------------------- |
+| `raw`  | string | The full value part of the last header sent with this name |
+| `list` | table  | List of values sent for this header name (`{ values }`)    |
+| `dict` | table  | Key-value interpretation (`key -> { values }`)             |
+
+The `list` representation is formed by splitting values on `;`, and the `dict`
+representation further splits those values into key-value pairs on `=`.  So,
+values that are not key-value pairs will be found in `raw` and `list`, but not
+in `dict`.  Key-value pairs will appear in all three fields.
 
 ### Chunked Body Stream
 
@@ -106,8 +122,8 @@ Handlers must return a response table:
 | --------- | ------------------ | ------------------------------------------ |
 | `status`  | integer            | HTTP status code (e.g. `200`, `404`)       |
 | `reason`  | string             | Reason phrase (e.g. `"OK"`, `"Not Found"`) |
-| `headers` | table              | Optional headers to include                |
-| `cookies` | table              | Optional cookies to set (`key -> value`)   |
+| `headers` | table              | Optional headers to send (`name -> value`) |
+| `cookies` | table              | Optional cookies to set (`name -> value`)  |
 | `body`    | string or function | Response body or writer function           |
 
 If `body` is a function, it is called with `output` to write the response manually.
