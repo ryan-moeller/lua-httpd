@@ -232,12 +232,16 @@ local function handle_request(server)
 end
 
 
+-- TODO: strict parser FSM handling quoting and escapes according to spec
+-- Try to handle some simple common quoted headers for now.
+
+
 local function parse_header_value(header, value)
    header.raw = value
 
    local function parse(attrib)
       table.insert(header.list, attrib)
-      local key, value = string.match(attrib, "^%s*(.*)=(.*)%s*$")
+      local key, value = attrib:match("^%s*(.*)=\"?(.*)\"?%s*$")
       if key then
          local attrval = header.dict[key] or {}
          table.insert(attrval, value)
@@ -245,14 +249,18 @@ local function parse_header_value(header, value)
       end
    end
 
-   string.gsub(value, "([^;]+)", parse)
+   value:gsub("([^;]+)", parse)
 
    return header
 end
 
 
 local function parse_header_field(line)
-   return string.match(line, "^(%g+):%s*(.*)%s*\r$")
+   local name, value = line:match('^(%g+):%s*"([^";]+)"%s*\r$')
+   if name and value then
+      return name, value
+   end
+   return line:match("^(%g+):%s*(.*)%s*\r$")
 end
 
 
@@ -351,7 +359,7 @@ local function handle_chunked_message_body(server)
          -- convenience.
          local exts_dict = {}
          for ext in exts_str:gmatch(";([^;]+)") do
-            local name, value = ext:match("([^=]+)=?(.*)")
+            local name, value = ext:match('([^=]+)=?"?(.*)"?')
             local extension = exts_dict[name] or {}
             table.insert(extension, #value > 0 and value or true)
             exts_dict[name] = extension
