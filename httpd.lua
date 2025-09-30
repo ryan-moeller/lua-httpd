@@ -485,24 +485,19 @@ function M.create_server(logfile, input, output)
       input = input or io.input(),
       output = output or io.output(),
       max_chunk_size = M.default_max_chunk_size,
-      handlers = {
-         -- handlers is a map of method => { location, location, ... }
-         -- locations are matched in the order given, first match wins
-         -- a location is an ordered list of { pattern, handler }
-         -- pattern is a Lua pattern for string matching the path
-         -- handler is a function(request) returning a response table
-         GET = {},
-         HEAD = {},
-         POST = {},
-         PATCH = {},
-         PUT = {},
-         DELETE = {},
-         CONNECT = {},
-         OPTIONS = {},
-         TRACE = {}
-      }
+      handlers = {},
    }
+
    server.log:setvbuf("no")
+
+   -- handlers is a map of method => { location, location, ... }
+   -- locations are matched in the order given, first match wins
+   -- a location is an ordered list of { pattern, handler }
+   -- pattern is a Lua pattern for string matching the path
+   -- handler is a function(request) returning a response table
+   for _, method in ipairs(methods) do
+      server.handlers[method] = {}
+   end
 
    function server:add_route(method, pattern, handler)
       table.insert(self.handlers[method], { pattern, handler })
