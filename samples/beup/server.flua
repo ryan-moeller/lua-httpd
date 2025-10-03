@@ -219,9 +219,8 @@ server:add_route("POST", "^/update$", function(request)
     -- FIXME: this whole function is nasty ;)
     local log = request.server.log
     log:write("checking request validity\n")
-    local content_type = table.concat(request.headers["content-type"].list)
-    log:write(ucl.to_json(content_type).."\n")
-    if content_type ~= "application/x-www-form-urlencoded" then
+    local content_type = request.headers["content-type"]
+    if not content_type or not content_type:contains_value("application/x-www-form-urlencoded") then
         log:write("request with invalid form content-type\n")
         return { status=415, reason="unsupported media type",
                  body="This form must be submitted as application/x-www-form-urlencoded data." }

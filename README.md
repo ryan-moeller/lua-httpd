@@ -89,16 +89,44 @@ Handler functions receive a `request` table with the following fields:
 The `request.headers` and `request.trailers` tables use lowercased names as keys
 and tables with the following structure as values:
 
-| Field  | Type   | Description                                                |
-| ------ | ------ | ---------------------------------------------------------- |
-| `raw`  | string | The full value part of the last header sent with this name |
-| `list` | table  | List of values sent for this header name (`{ values }`)    |
-| `dict` | table  | Key-value interpretation (`key -> { values }`)             |
+| Field      | Type   | Description                                            |
+| ---------- | ------ | ------------------------------------------------------ |
+| `raw`      | table  | List of raw values for this field in order received    |
+| `elements` | table  | List of parsed values for this field in order received |
 
-The `list` representation is formed by splitting values on `;`, and the `dict`
-representation further splits those values into key-value pairs on `=`.  So,
-values that are not key-value pairs will be found in `raw` and `list`, but not
-in `dict`.  Key-value pairs will appear in all three fields.
+The `elements` field contains the list of elements parsed from the field values
+received for this header field.  An `element` is a table with the following
+optional fields:
+
+| Field    | Type   | Description                                              |
+| -------- | ------ | -------------------------------------------------------- |
+| `value`  | string | A token/quoted-string value (quotes/escapes removed)     |
+| `params` | table  | List of element parameters in order received (see below) |
+
+One or both fields may be present.
+
+The `params` list contains parameters in either name-value or attribute form.
+
+The name-value form is as follows:
+
+| Field   | Type   | Description                                            |
+| ------- | ------ | ------------------------------------------------------ |
+| `name`  | string | The token preceding "=" in the parameter               |
+| `value` | string | The token/quoted-string value (quotes/escapes removed) |
+
+The attribute form:
+
+| Field       | Type   | Description              |
+| ----------- | ------ | ------------------------ |
+| `attribute` | string | The attribute name token |
+
+A few convenience methods are also provided on header/trailer objects:
+
+| Method                   | Description                                       |
+| ------------------------ | ------------------------------------------------- |
+| `:concat(...)`           | Returns `table.concat(self.raw, ...)`             |
+| `:contains_value(value)` | Tests if any element value field equals `value`   |
+| `:find_elements(value)`  | Returns a list of the elements with value `value` |
 
 ### Chunked Body Stream
 

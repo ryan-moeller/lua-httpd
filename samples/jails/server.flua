@@ -550,8 +550,8 @@ end
 --    own config (e.g. in YAML) for a new service.  Probably too much work.
 
 local function create_contents(request)
-    local content_type = table.concat(request.headers["content-type"].list)
-    if content_type ~= "application/x-www-form-urlencoded" then
+    local content_type = request.headers["content-type"]
+    if not content_type or not content_type:contains_value("application/x-www-form-urlencoded") then
         return { status=415, reason="unsupported media type",
                  body="This form must be submitted as application/x-www-form-urlencoded data." }
     end

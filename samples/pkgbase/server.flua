@@ -126,22 +126,22 @@ server:add_route("GET", "^/ws$", function(request)
     local ws <const> = require("websocket")
 
     log = request.server.log
-    local connection
-    for val in request.headers["connection"].raw:gmatch("([^%s,]+)") do
-        if val == "Upgrade" then
-            connection = val
-            break
-        end
-    end
-    local upgrade <const> = request.headers["upgrade"].raw
-    local key <const> = request.headers["sec-websocket-key"].raw
-    local version <const> = request.headers["sec-websocket-version"].raw
-    if connection ~= "Upgrade" or upgrade ~= "websocket" or version ~= "13" then
+    local connection_header <const> = request.headers["connection"]
+    local upgrade_header <const> = request.headers["upgrade"]
+    local key_header <const> = request.headers["sec-websocket-key"]
+    local version_header <const> = request.headers["sec-websocket-version"]
+    local connection_upgrade <const> =
+        connection_header and connection_header:contains_value("Upgrade")
+    local upgrade <const> = upgrade_header and upgrade_header:concat()
+    local key <const> = key_header and key_header:concat()
+    local version <const> = version_header and version_header:concat()
+    if not connection_upgrade or upgrade ~= "websocket" or
+        not key or version ~= "13" then
         log:write("bad request\n")
         return { status=400, reason="Bad Request", body="can't do that" }
     end
     local headers <const> = {
-        ["Connection"] = connection,
+        ["Connection"] = "Upgrade",
         ["Upgrade"] = upgrade,
         ["Sec-WebSocket-Accept"] = ws.accept(key),
     }
