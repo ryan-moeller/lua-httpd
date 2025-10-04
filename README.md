@@ -133,7 +133,7 @@ A few convenience methods are also provided on header/trailer objects:
 If `request.body` is a function, it returns an iterator over the stream chunks:
 
 ```lua
-for chunk, extensions_dict, extensions_string in response.body() do
+for chunk, extensions_dict, extensions_string in request.body() do
     -- chunk: bytes
     -- extensions_dict: table of chunk extensions (name -> { values })
     -- extensions_string: the raw extensions part of the chunk size header
