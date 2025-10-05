@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.1.0'
+M.VERSION = '0.1.1'
 
 
 -- HTTP-message = start-line
@@ -227,6 +227,7 @@ end
 -- Header format:
 --
 -- {
+--    unvalidated = { "t;n=v;a (comment) (and (a nested comment) too)", ... },
 --    raw = { "t;n=v;a (comment) (and (a nested comment) too)", ... },
 --    elements = {
 --       {
@@ -246,48 +247,20 @@ end
 --    }
 -- }
 --
--- The `raw` and `elements` fields are of a header are always provided.
+-- The `raw` and `elements` fields of a header invoke the parser on first access
+-- and cache the result.
+--
 -- The `value`, `params`, and `comments` attributes of an element are optional.
+--
 -- The fields of a parameter are either `name` and `value` or `attribute`.
 --
--- `raw`: preserves each header field line verbatim, in order of reception
--- `elements`: reflects the structured form described in RFC 9110 §5.6,
---             also in order of reception
-local function new_header()
-   -- TODO: Make header parsing lazy.  Just accumulate unvalidated input values
-   -- in a list and provide access to validated values and parsed elements
-   -- behind a metamethod that runs the parser on demand and caches the result.
-   -- This would let us ignore headers we don't use.  Validation/parsing for all
-   -- headers could be forced by a server configuration parameter.
-   --
-   -- This API will suffice for now.
-   local header = {
-      raw = {}, -- list of all raw field values
-      elements = {}, -- list of structured elements
-   }
-   function header:concat(...)
-      return table.concat(header.raw, ...)
-   end
-   function header:contains_value(value)
-      for _, element in ipairs(header.elements) do
-         if element.value == value then
-            return true
-         end
-      end
-      return false
-   end
-   function header:find_elements(value)
-      local matches = {}
-      for _, element in ipairs(header.elements) do
-         if element.value == value then
-            table.insert(matches, element)
-         end
-      end
-      return matches
-   end
-   -- TODO: add some more convenience methods
-   return header
-end
+-- Unvalidated fields:
+-- `unvalidated`: list of unvalidated field values verbatim, in order received
+--
+-- Validated fields:
+-- `raw`: list of unparsed, validated field values verbatim, in order received
+-- `elements`: reflects the parsed, structured forms described in RFC 9110 §5.6,
+--             listed in order of reception
 
 
 -- Header value lexer FSM states
@@ -832,6 +805,10 @@ M.header_value_parser_comment_depth_limit = 100
 
 
 local function parse_header_value(header, value)
+   -- TODO: Lazy lexer/parser construction.  Some requests may not require
+   -- header inspection at all.  If we never end up here, we never use the
+   -- lexer/parser machinery.  This is easily implemented as a function that
+   -- does the construction then replaces itself and finally calls itself.
    local stack = {}
    local stack_size_limit = M.header_value_parser_stack_size_limit
    local comment_depth_limit = M.header_value_parser_comment_depth_limit
@@ -856,7 +833,7 @@ local function parse_header_value(header, value)
          #stack > stack_size_limit or
          parser.comment_depth > comment_depth_limit then
          -- Abort! This message is bunk!
-         return header
+         return
       end
 
       local parser_index = ((lexer_state << 4) | next_lexer_state) + 1
@@ -887,12 +864,58 @@ local function parse_header_value(header, value)
       end
    end
    table.insert(header.raw, value)
-
-   return header
 end
 
 
---[[ TEST CASES
+local header_methods = {
+   concat = function(header, ...)
+      return table.concat(header.raw, ...)
+   end,
+
+   contains_value = function(header, value)
+      for _, element in ipairs(header.elements) do
+         if element.value == value then
+            return true
+         end
+      end
+      return false
+   end,
+
+   find_elements = function(header, value)
+      local matches = {}
+      for _, element in ipairs(header.elements) do
+         if element.value == value then
+            table.insert(matches, element)
+         end
+      end
+      return matches
+   end,
+
+   -- TODO: add some more convenience methods
+}
+
+
+local header_metatable = {
+   __index = function(header, key)
+      if key ~= "raw" and key ~= "elements" then
+         return header_methods[key]
+      end
+      header.raw = {} -- list of all raw (but validated) field values
+      header.elements = {} -- list of structured elements
+      for _, value in ipairs(header.unvalidated) do
+         parse_header_value(header, value)
+      end
+      return header[key]
+   end,
+}
+
+
+local function new_header()
+   return setmetatable({unvalidated={}}, header_metatable)
+end
+
+
+--[[ TESTS
 log = io.stderr
 local values = {
    "token",
@@ -909,18 +932,30 @@ local values = {
    "x,(y);",
    "Sun, 06 Nov 1994 08:49:37 GMT",
 }
+local ucl = require("ucl")
 for _, value in ipairs(values) do
    print("field value: ", value)
-   print(require('ucl').to_json(parse_header_value(new_header(), value)), "\n")
+   local header = new_header()
+   table.insert(header.unvalidated, value)
+   -- Note if tracing is added to parse_header_value() that it is invoked once
+   -- for `raw` but not again for `elements`, because the result is memoized.
+   print("raw: ", ucl.to_json(header.raw))
+   print("elements: ", ucl.to_json(header.elements))
 end
-]]--
+--]]--
 
 
-local function update_trailer(server, name, value)
-   local trailers = server.request.trailers
-   -- Trailer may be repeated to form a list.
-   local trailer = trailers[name] or new_header()
-   trailers[name] = parse_header_value(trailer, value)
+local function update_header_table(t, name, value)
+   -- Header parsing is deferred until either header.raw or header.elements is
+   -- accessed (potentially by a convenience method).
+   --
+   -- Just accumulate unvalidated input values in a list for now.
+   --
+   -- TODO: Validation/parsing for all headers could be forced by a server
+   -- configuration parameter.
+   local header = t[name] or new_header()
+   table.insert(header.unvalidated, value)
+   t[name] = header
 end
 
 
@@ -940,7 +975,9 @@ local function handle_trailer_field(server, line)
       if name then
          -- Header field names are case-insensitive.
          local lname = string.lower(name)
-         update_trailer(server, lname, value)
+         -- Cookies received in trailers are intentionally ignored.
+         -- We'll just throw them in with the trailers instead.
+         update_header_table(server.request.trailers, name, value)
       else
          server.log:write("Ignoring invalid trailer: ", line, "\n")
       end
@@ -1076,18 +1113,11 @@ end
 
 local function set_cookie(server, cookie)
    -- Browsers do not send cookie attributes in requests.
+   -- TODO: handle multiple cookie-pairs (e.g. "foo=bar; baz=qux") ref. RFC 6265
    local name, value = string.match(cookie, "(.+)=(.*)")
    local cookie = server.request.cookies[name] or {}
    table.insert(cookie, value)
    server.request.cookies[name] = cookie
-end
-
-
-local function update_header(server, name, value)
-   local headers = server.request.headers
-   -- Header may be repeated to form a list.
-   local header = headers[name] or new_header()
-   headers[name] = parse_header_value(header, value)
 end
 
 
@@ -1104,7 +1134,7 @@ local function handle_header_field(server, line)
          if lname == "cookie" then
             set_cookie(server, value)
          else
-            update_header(server, lname, value)
+            update_header_table(server.request.headers, lname, value)
          end
       else
          server.log:write("Ignoring invalid header: ", line, "\n")

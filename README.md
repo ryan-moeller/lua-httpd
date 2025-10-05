@@ -89,10 +89,11 @@ Handler functions receive a `request` table with the following fields:
 The `request.headers` and `request.trailers` tables use lowercased names as keys
 and tables with the following structure as values:
 
-| Field      | Type   | Description                                            |
-| ---------- | ------ | ------------------------------------------------------ |
-| `raw`      | table  | List of raw values for this field in order received    |
-| `elements` | table  | List of parsed values for this field in order received |
+| Field         | Type  | Description                                        |
+| ------------- | ----- | -------------------------------------------------- |
+| `unvalidated` | table | List of unvalidated field values in order received |
+| `raw`         | table | List of validated field values in order received   |
+| `elements`    | table | List of parsed field values in order received      |
 
 The `elements` field contains the list of elements parsed from the field values
 received for this header field.  An `element` is a table with the following
@@ -127,6 +128,9 @@ A few convenience methods are also provided on header/trailer objects:
 | `:concat(...)`           | Returns `table.concat(self.raw, ...)`             |
 | `:contains_value(value)` | Tests if any element value field equals `value`   |
 | `:find_elements(value)`  | Returns a list of the elements with value `value` |
+
+Headers are validated and parsed lazily, so headers that are not accessed via
+`raw`, `elements`, or a convenience method do not get validated or parsed.
 
 ### Chunked Body Stream
 
