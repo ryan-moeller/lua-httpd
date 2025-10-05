@@ -47,11 +47,13 @@ service inetd restart
 
 ### API
 
-#### `httpd.create_server(logfile) → server`
+#### `httpd.create_server(logfile[, input[, output]]) → server`
 
 Create a new HTTP server instance.
 
 * `logfile`: Path to a file where logs will be written.
+* `input`: Optional input file handle.  `io.stdin` by default.
+* `output`: Optional output file handle.  `io.stdout` by default.
 * Returns a `server` object.
 
 #### `server:add_route(method, pattern, handler)`

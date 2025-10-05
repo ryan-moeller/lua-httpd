@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.1.1'
+M.VERSION = '0.1.2'
 
 
 -- HTTP-message = start-line
@@ -218,9 +218,19 @@ local function handle_request(server)
    ::respond::
    write_http_response(server, response)
 
-   -- Close all open file handles and exit to complete the response.
+   -- Close input and output file handles to complete the response.
    -- TODO: pipelining
-   os.exit()
+   if server.input == io.stdin or server.output == io.stdout then
+      -- We can't close stdin or stdout, we have to exit.
+      os.exit()
+   end
+   -- TODO: Accommodate a persistent server with an accept loop.  For now, we
+   -- must trash the server after every request/response.
+   server.input:close()
+   if server.output ~= server.input then
+      server.output:close()
+   end
+   server.log:close()
 end
 
 
@@ -1169,8 +1179,8 @@ function M.create_server(logfile, input, output)
    local server = {
       state = ServerState.START_LINE,
       log = io.open(logfile, "a"),
-      input = input or io.input(),
-      output = output or io.output(),
+      input = input or io.stdin,
+      output = output or io.stdout,
       max_chunk_size = M.default_max_chunk_size,
       -- handlers is a map of method => { location, location, ... }
       -- locations are matched in the order given, first match wins
