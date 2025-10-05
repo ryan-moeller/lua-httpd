@@ -393,9 +393,7 @@ local HeaderValueLexerFSM = (function()
    function setters.table(state, key, value)
       if key.start then
          -- Range form
-         local start = key.start
-         local stop = key.stop
-         for byte = start, stop do
+         for byte = key.start, key.stop do
             fsm[((state << 8) | byte) + 1] = value
          end
       else
