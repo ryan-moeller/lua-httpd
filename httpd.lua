@@ -823,7 +823,10 @@ end
 
 -- Abuse mitigations
 --
--- These limits are lenient by a huge margin but ignore pathological input.
+-- These limits are lenient by a huge margin but help the parser ignore
+-- pathological input.  If you're expecting huge quoted strings with an
+-- absurd number of escapes in your headers and run into this limit, it
+-- can be raised on the module table before running the server.
 M.header_value_parser_stack_size_limit = 1000
 M.header_value_parser_comment_depth_limit = 100
 
