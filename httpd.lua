@@ -328,10 +328,10 @@ local HeaderValueLexerAccept = {
    [HeaderValueLexerState.PARAMETER_NAME + 1] = true,
    [HeaderValueLexerState.PARAMETER_VALUE + 1] = false, -- "=" must be followed
    [HeaderValueLexerState.CONTENT + 1] = false, -- not structured
-   [HeaderValueLexerState.ERROR + 1] = false,
+   -- We can omit ERROR, as transitioning into ERROR halts the FSM.
 }
 -- Sanity check the array layout.
-assert(#HeaderValueLexerAccept == HeaderValueLexerState.ERROR + 1)
+assert(#HeaderValueLexerAccept == HeaderValueLexerState.ERROR)
 
 
 -- Compile the production rules for the FSM into a VM-optimimized table.
@@ -358,7 +358,8 @@ local HeaderValueLexerFSM = (function()
    -- gives us space for 256 * the number of states, i.e. Nstates * Nbytes.
    --
    -- There isn't a convenient way to get the number of entries in a hash table,
-   -- so we use the size of the HeaderValueLexerAccept array instead.
+   -- so we use the size of the HeaderValueLexerAccept array instead.  The FSM
+   -- and Accept tables exclude the ERROR state to avoid wasting time and space.
    for i = 1, (#HeaderValueLexerAccept) << 8 do
       -- Anything not caught by the rules below is invalid.
       fsm[i] = HeaderValueLexerState.ERROR
