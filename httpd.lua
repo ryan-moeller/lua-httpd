@@ -408,15 +408,19 @@ local HeaderValueLexerFSM = (function()
    local function range(start, stop) return {start=start, stop=stop} end
    local ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
    local DIGIT = "0123456789"
-   local DQUOTE = '"'
-   local HTAB = "\t"
-   local OCTET = range(0x00, 0xff)
-   local SP = " "
+   local DQUOTE = 0x22 -- " (double quote)
    local VCHAR = range(0x21, 0x7e)
-   local WSP = SP..HTAB
+   -- Other handy keys
+   local WSP = " \t"
    local obs_text = range(0x80, 0xff)
    local field_vchar = { VCHAR, obs_text }
-   local tchar = "!#$%&'*+-.^_`|~"..ALPHA..DIGIT
+   local tchar = table.concat({"!#$%&'*+-.^_`|~", ALPHA, DIGIT})
+   local comma = 0x2c -- , (comma)
+   local lparen = 0x28 -- ( (left parenthesis)
+   local rparen = 0x29 -- ) (right parenthesis)
+   local semicolon = 0x3b -- ; (semicolon)
+   local equals = 0x3d -- = (equal sign)
+   local backslash = 0x5c -- \ (backslash)
 
    -- Add a list of rules to the FSM.
    local function state_rules(state, rules)
@@ -457,43 +461,43 @@ local HeaderValueLexerFSM = (function()
       -- §5.6.1 Lists, §5.6.6 Parameters
       {WSP, HeaderValueLexerState.OWS},
       -- §5.6.1 Lists
-      {",", HeaderValueLexerState.LIST_DELIMITER},
+      {comma, HeaderValueLexerState.LIST_DELIMITER},
       -- §5.6.2 Tokens
       {tchar, HeaderValueLexerState.TOKEN},
       -- §5.6.4 Quoted Strings
       {DQUOTE, HeaderValueLexerState.QUOTED_STRING_BEGIN},
       -- §5.6.5 Comments
-      {"(", HeaderValueLexerState.COMMENT_OPEN},
+      {lparen, HeaderValueLexerState.COMMENT_OPEN},
       -- §5.6.6 Parameters
-      {";", HeaderValueLexerState.PARAMETER},
+      {semicolon, HeaderValueLexerState.PARAMETER},
    }
    local string_rules = {
       -- §5.6.4 Quoted Strings
       -- Note: Exceptions from this range are made by the later rules.
       {{WSP, VCHAR, obs_text}, HeaderValueLexerState.QUOTED_STRING},
       {DQUOTE, HeaderValueLexerState.QUOTED_STRING_END},
-      {0x5c, HeaderValueLexerState.ESCAPE}, -- \ (backslash)
+      {backslash, HeaderValueLexerState.ESCAPE},
    }
    local comment_rules = {
       -- §5.6.5 Comments
       -- Note: Exceptions from this range are made by the later rules.
       {{WSP, VCHAR, obs_text}, HeaderValueLexerState.COMMENT},
-      {"(", HeaderValueLexerState.COMMENT_OPEN},
-      {")", HeaderValueLexerState.COMMENT_CLOSE},
-      {0x5c, HeaderValueLexerState.ESCAPE}, -- \ (backslash)
+      {lparen, HeaderValueLexerState.COMMENT_OPEN},
+      {rparen, HeaderValueLexerState.COMMENT_CLOSE},
+      {backslash, HeaderValueLexerState.ESCAPE},
    }
    state_rules(HeaderValueLexerState.OWS, element_rules)
    state_rules(HeaderValueLexerState.TOKEN, {
       -- §5.6.1 Lists, §5.6.6 Parameters
       {WSP, HeaderValueLexerState.OWS},
       -- §5.6.1 Lists
-      {",", HeaderValueLexerState.LIST_DELIMITER},
+      {comma, HeaderValueLexerState.LIST_DELIMITER},
       -- §5.6.2 Tokens
       {tchar, HeaderValueLexerState.TOKEN},
       -- §5.6.5 Comments
-      {"(", HeaderValueLexerState.COMMENT_OPEN},
+      {lparen, HeaderValueLexerState.COMMENT_OPEN},
       -- §5.6.6 Parameters
-      {";", HeaderValueLexerState.PARAMETER},
+      {semicolon, HeaderValueLexerState.PARAMETER},
    })
    state_rules(HeaderValueLexerState.LIST_DELIMITER, element_rules)
    state_rules(HeaderValueLexerState.QUOTED_STRING_BEGIN, string_rules)
@@ -502,11 +506,11 @@ local HeaderValueLexerFSM = (function()
       -- §5.6.1 Lists, §5.6.6 Parameters
       {WSP, HeaderValueLexerState.OWS},
       -- §5.6.1 Lists
-      {",", HeaderValueLexerState.LIST_DELIMITER},
+      {comma, HeaderValueLexerState.LIST_DELIMITER},
       -- §5.6.5 Comments
-      {"(", HeaderValueLexerState.COMMENT_OPEN},
+      {lparen, HeaderValueLexerState.COMMENT_OPEN},
       -- §5.6.6 Parameters
-      {";", HeaderValueLexerState.PARAMETER},
+      {semicolon, HeaderValueLexerState.PARAMETER},
    })
    state_rules(HeaderValueLexerState.ESCAPE, {
       -- §5.6.4 Quoted Strings, §5.6.5 Comments
@@ -527,18 +531,18 @@ local HeaderValueLexerFSM = (function()
    state_rules(HeaderValueLexerState.COMMENT_CLOSE, element_rules)
    state_rules(HeaderValueLexerState.PARAMETER, {
       -- §5.6.6 Parameters
-      {WSP..";", HeaderValueLexerState.PARAMETER},
+      {{WSP, semicolon}, HeaderValueLexerState.PARAMETER},
       {tchar, HeaderValueLexerState.PARAMETER_NAME},
    })
    state_rules(HeaderValueLexerState.PARAMETER_NAME, {
       -- §5.6.1 Lists, §5.6.6 Parameters
       {WSP, HeaderValueLexerState.OWS},
       -- §5.6.1 Lists
-      {",", HeaderValueLexerState.LIST_DELIMITER},
+      {comma, HeaderValueLexerState.LIST_DELIMITER},
       -- §5.6.2 Tokens, §5.6.6 Parameters
-      {";", HeaderValueLexerState.PARAMETER},
+      {semicolon, HeaderValueLexerState.PARAMETER},
       {tchar, HeaderValueLexerState.PARAMETER_NAME},
-      {"=", HeaderValueLexerState.PARAMETER_VALUE},
+      {equals, HeaderValueLexerState.PARAMETER_VALUE},
    })
    state_rules(HeaderValueLexerState.PARAMETER_VALUE, {
       -- §5.6.6 Parameters
