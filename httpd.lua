@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.1.2'
+M.VERSION = '0.1.3'
 
 
 -- HTTP-message = start-line
@@ -317,9 +317,12 @@ local HeaderValueLexerAccept = {
 assert(#HeaderValueLexerAccept == HeaderValueLexerState.ERROR)
 
 
+-- The lexer FSM initialization is deferred until we parse a header.
+local HeaderValueLexerFSM = nil
+
+
 -- Compile the production rules for the FSM into a VM-optimimized table.
--- TODO: Lazy parsing, defer until required.
-local HeaderValueLexerFSM = (function()
+local function build_lexer_fsm()
    -- A single array-backed table should be the fastest representation in Lua.
    -- It has better space efficiency and cache locality than nested tables, and
    -- it uses only VM operations for lookup (as opposed to string.byte, which is
@@ -549,7 +552,7 @@ local HeaderValueLexerFSM = (function()
    -- We could compress the table by packing the integers - keeping the table
    -- small and fast but at the expense of some extra bit math.
    return fsm
-end)()
+end
 
 
 -- The header value parser encodes its behavior in a LUT.  The index into the
@@ -585,6 +588,9 @@ local HeaderValueParserOp = {
 }
 
 
+-- Implement the set of parser operations.  Each operation performs a mutation
+-- on a parser object.  Multiple operations can be combined to form an opcode.
+-- This table contains the code for the operations, not opcodes.
 local HeaderValueParserOpCode = {
    -- REMEMBER: these must contiguous values in order starting from 1
    [HeaderValueParserOp.ESCAPE] = function(parser)
@@ -689,7 +695,13 @@ local HeaderValueParserOpCode = {
 }
 
 
-local HeaderValueParserLUT, HeaderValueParserFinalLUT = (function()
+-- Initialization of the parser LUTs is deferred until we parse a header.
+local HeaderValueParserLUT, HeaderValueParserFinalLUT = nil, nil
+
+
+-- Compile the parser operations performed on lexer state transitions into
+-- a VM-optimized table of opcodes.
+local function build_parser_luts()
    local lut = {}
    local final = {}
 
@@ -791,7 +803,7 @@ local HeaderValueParserLUT, HeaderValueParserFinalLUT = (function()
    encode_final(S.PARAMETER_NAME,    O.PUSH_TOKEN, O.SET_PARAM, O.END_ITEM)
 
    return lut, final
-end)()
+end
 
 
 local function execute_parser_opcode(parser, opcode)
@@ -814,11 +826,7 @@ M.header_value_parser_stack_size_limit = 1000
 M.header_value_parser_comment_depth_limit = 100
 
 
-local function parse_header_value(header, value)
-   -- TODO: Lazy lexer/parser construction.  Some requests may not require
-   -- header inspection at all.  If we never end up here, we never use the
-   -- lexer/parser machinery.  This is easily implemented as a function that
-   -- does the construction then replaces itself and finally calls itself.
+local function parse_header_value_impl(header, value)
    local stack = {}
    local stack_size_limit = M.header_value_parser_stack_size_limit
    local comment_depth_limit = M.header_value_parser_comment_depth_limit
@@ -874,6 +882,20 @@ local function parse_header_value(header, value)
       end
    end
    table.insert(header.raw, value)
+end
+
+
+local function parse_header_value(header, value)
+   -- Lazy lexer/parser construction
+   --
+   -- Some requests may not require header inspection at all.  We don't need the
+   -- lexer/parser machinery unless we end up here.
+   HeaderValueLexerFSM = build_lexer_fsm()
+   HeaderValueParserLUT, HeaderValueParserFinalLUT = build_parser_luts()
+   -- This little trick avoids adding a branch to check for initialization every
+   -- time we parse a header.
+   parse_header_value = parse_header_value_impl
+   parse_header_value(header, value)
 end
 
 
