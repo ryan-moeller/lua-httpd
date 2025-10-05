@@ -434,23 +434,25 @@ local HeaderValueLexerFSM = (function()
    --
    -- We declare the table in a more human-friendly form which is expanded to a
    -- machine-optimized form at runtime.  The human-friendly version uses rules
-   -- specified as lists of special key-value pairs for each state:
+   -- specified as lists of `{key, value}` pairs for each state:
    --
-   --  * Number keys give the production rule for a single byte of input.
+   --  * A number key gives the production rule for a single byte of input.
    --
-   --  * String keys give a collection of characters producing the same state.
+   --  * A string key gives a collection of bytes producing the same state.
    --
-   --  * Table keys in {start=byte, stop=byte} form give a range of keys
+   --  * A table key in {start=byte, stop=byte} form gives a range of bytes
    --    producing the same state.
    --
-   --  * Table keys in array form give a list of keys producing the same state.
+   --  * A table key in array form lists keys producing the same state.
    --
-   -- Keys not present all produce the ERROR state.  Overlapping key specifications
-   -- overwrite the transition table in the order given.  The values specify the
-   -- state to transition to.
+   --  * The value specifies the state to produce for input matching the key.
    --
-   -- Every state starts with the base assumption that field-vchar -> CONTENT and
-   -- need only add more specific rules.
+   -- Input not matching the key for any rule produces the ERROR state.
+   -- Overlapping key specifications overwrite the transition table in the
+   -- order given.
+   --
+   -- Every state has an implicit rule for field-content -> CONTENT and need
+   -- only add more specific rules.
    --
    -- References: RFC 9110 §5.5, §5.6
    local element_rules = {
