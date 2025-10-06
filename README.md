@@ -178,6 +178,12 @@ Handlers must return a response table:
 
 If `body` is a function, it is called with `output` to write the response manually.
 
+To send multiple headers with the same name, set the value to a list of strings.
+Each string will be sent in order as a separate header field.
+
+Handlers are responsible for incorporating any cookie attributes into the value
+string.
+
 ### Utility Functions
 
 These functions are also available from the module:

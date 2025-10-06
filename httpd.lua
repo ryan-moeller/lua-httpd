@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.2.0'
+M.VERSION = '0.3.0'
 
 
 -- HTTP-message = start-line
@@ -112,9 +112,22 @@ end
 -- Helper for writing a list of headers/trailers.
 -- This includes the terminator.
 local function write_headers(output, headers, cookies)
+   -- The order of field lines with different names is not significant
+   -- (RFC 9110 §5.3), so iterating table keys is acceptable.
    for name, value in pairs(headers or {}) do
-      output:write(name, ": ", value, "\r\n")
+      if type(value) == "table" then
+         -- Accept an ordered list of values for repeated headers.
+         for _, v in ipairs(value) do
+            output:write(name, ": ", v, "\r\n")
+         end
+      else
+         output:write(name, ": ", value, "\r\n")
+      end
    end
+   -- Servers SHOULD NOT set the same cookie-name more than once in a response
+   -- (RFC 6265 §4.1.1), and the order in which cookies with different names
+   -- are set is not specified to be significant, so iterating table keys is
+   -- acceptable.
    for name, value in pairs(cookies or {}) do
       output:write("Set-Cookie: ", name, "=", value, "\r\n")
    end
@@ -132,9 +145,10 @@ local function write_http_response(server, response)
    local status = response.status
    local reason = response.reason
    local headers = response.headers or {}
-   local cookies = response.cookies or {}
+   local cookies = response.cookies
    local body = response.body
 
+   -- TODO: normalize header names
    -- TODO: MUST generate a Date header field in certain cases (RFC 9110 §6.6.1)
 
    if type(body) == "string" then
