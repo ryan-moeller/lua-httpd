@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.1.3'
+M.VERSION = '0.2.0'
 
 
 -- HTTP-message = start-line
@@ -1143,14 +1143,81 @@ local function handle_blank_line(server)
 end
 
 
-local function set_cookie(server, cookie)
+-- cookie-string = cookie-pair *( ";" SP cookie-pair )
+-- cookie-pair   = cookie-name "=" cookie-value
+-- cookie-name   = token
+-- cookie-value  = *cookie-octet / ( DQUOTE *cookie-octet DQUOTE )
+-- cookie-octet  = %x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E
+-- token         = 1*<any CHAR except CTLs or separators>
+-- separators    = "(" | ")" | "<" | ">" | "@"
+--               | "," | ";" | ":" | "\" | <">
+--               | "/" | "[" | "]" | "?" | "="
+--               | "{" | "}" | SP | HT
+-- CHAR          = <any US-ASCII character (octets 0 - 127)>
+-- CTL           = <any US-ASCII control character
+--                 (octets 0 - 31) and DEL (127)>
+--
+-- References: RFC 6265 §4.1.1 & §4.2.1, RFC 2616 §2.2
+local function set_cookies(server, cookie)
    -- Browsers do not send cookie attributes in requests.
-   -- TODO: handle multiple cookie-pairs (e.g. "foo=bar; baz=qux") ref. RFC 6265
-   local name, value = string.match(cookie, "(.+)=(.*)")
-   local cookie = server.request.cookies[name] or {}
-   table.insert(cookie, value)
-   server.request.cookies[name] = cookie
+   local pattern = table.concat({
+      "^",                                                  -- no skipping ahead
+      '([^%c%(%)<>@,;:\\"/[%]?={} \t\128-\255]+)',          -- cookie-name
+      '=("?)',                                              -- "=" DQUOTE?
+      -- Note "%\x5d" below: "\x5d" is "]", which must be escaped as "%]".
+      -- However, an escaped character cannot be used to specify a range, so the
+      -- next character ("\x5e") is required to start the final range.
+      "([\x21\x23-\x2b\x2d-\x3a\x3c-\x5b%\x5d\x5e-\x7e]*)", -- cookie-value
+      "%2(;? ?)",                                           -- DQUOTE? "; "?
+   })
+   local cookies = {}
+   local tail = ""
+   local pos = 1
+   local valid = false
+   -- Cookie header is only allowed to appear once.  Ignore repeats.
+   if #server.cookies > 0 then
+      goto check_valid
+   end
+   while pos <= #cookie do
+      local start_pos, end_pos, name, _quote, value, sep =
+         cookie:find(pattern, pos)
+      if not start_pos or (sep ~= "; " and sep ~= "") then
+         goto check_valid
+      end
+      tail = sep
+      table.insert(cookies, {name=name, value=value})
+      pos = end_pos + 1
+   end
+   valid = tail == ""
+   ::check_valid::
+   if not valid then
+      server.log:write("Ignoring invalid Cookie header\n")
+      return
+   end
+   server.cookies = cookies
 end
+
+
+--[[ TESTS
+local ucl = require("ucl")
+local values = {
+  'sessionid=abc123; user="john_doe"; theme=dark', -- valid
+  'sessionid=abc123 ;user=badsep',                 -- invalid
+  'foo@bar=baz',                                   -- invalid
+  'a=b; ',                                         -- invalid
+  'a=b',                                           -- valid
+}
+for _, value in ipairs(values) do
+   local server = {
+      cookies = {},
+      log = io.stderr,
+   }
+   print("Cookie:", value)
+   set_cookies(server, value)
+   --print("server:", ucl.to_json(server)) -- libucl segfaults on server.log!
+   print("cookies:", ucl.to_json(server.cookies))
+end
+--]]--
 
 
 local function handle_header_field(server, line)
@@ -1164,7 +1231,7 @@ local function handle_header_field(server, line)
          -- Header field names are case-insensitive.
          local lname = string.lower(name)
          if lname == "cookie" then
-            set_cookie(server, value)
+            set_cookies(server, value)
          else
             update_header_table(server.request.headers, lname, value)
          end

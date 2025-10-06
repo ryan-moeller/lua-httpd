@@ -82,7 +82,7 @@ Handler functions receive a `request` table with the following fields:
 | `version`  | string             | HTTP version (e.g. `"HTTP/1.1"`)          |
 | `headers`  | table              | Request headers (lowercased)              |
 | `trailers` | table              | Request trailers (if present, lowercased) |
-| `cookies`  | table              | Request cookies (`name -> { values }`)    |
+| `cookies`  | table              | Request cookies set by `Cookie` header    |
 | `body`     | string or function | Request body or chunk stream (if present) |
 | `matches`  | table              | Captures or match from route Lua pattern  |
 
@@ -133,6 +133,18 @@ A few convenience methods are also provided on header/trailer objects:
 
 Headers are validated and parsed lazily, so headers that are not accessed via
 `raw`, `elements`, or a convenience method do not get validated or parsed.
+
+### Request Cookies
+
+The `request.cookies` table is a list of validated and parsed cookies from the
+`Cookie` header, or an empty table if no valid `Cookie` header was received.
+Validation and parsing only checks cookie syntax, not semantics.  A cookie is
+parsed as a cookie-pair with the following form:
+
+| Field   | Type   | Description                                     |
+| ------- | ------ | ----------------------------------------------- |
+| `name`  | string | The cookie-name token                           |
+| `value` | string | The cookie-value cookie-octets (quotes removed) |
 
 ### Chunked Body Stream
 
