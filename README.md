@@ -181,6 +181,10 @@ If `body` is a function, it is called with `output` to write the response manual
 To send multiple headers with the same name, set the value to a list of strings.
 Each string will be sent in order as a separate header field.
 
+A Date header is automatically added if not present in `response.headers`.
+
+A Content-Length header is automatically added when `response.body` is a string.
+
 Handlers are responsible for incorporating any cookie attributes into the value
 string.
 

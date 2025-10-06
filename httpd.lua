@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.3.0'
+M.VERSION = '0.4.0'
 
 
 -- HTTP-message = start-line
@@ -149,7 +149,12 @@ local function write_http_response(server, response)
    local body = response.body
 
    -- TODO: normalize header names
-   -- TODO: MUST generate a Date header field in certain cases (RFC 9110 §6.6.1)
+
+   -- MUST generate a Date header field in certain cases (RFC 9110 §6.6.1)
+   -- Doesn't hurt to always send one.
+   if not headers["Date"] then
+      headers["Date"] = os.date("!%a, %d %b %Y %H:%M:%S GMT")
+   end
 
    if type(body) == "string" then
       headers['Content-Length'] = #body
