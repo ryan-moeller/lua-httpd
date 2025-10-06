@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = '0.4.0'
+M.VERSION = "0.4.0"
 
 
 -- HTTP-message = start-line
@@ -157,7 +157,7 @@ local function write_http_response(server, response)
    end
 
    if type(body) == "string" then
-      headers['Content-Length'] = #body
+      headers["Content-Length"] = #body
    end
 
    local statusline = string.format("HTTP/1.1 %03d %s\r\n", status, reason)
@@ -1142,8 +1142,8 @@ end
 
 local function handle_blank_line(server)
    local request = server.request
-   local transfer_encoding_header = request.headers['transfer-encoding']
-   local content_length_header = request.headers['content-length']
+   local transfer_encoding_header = request.headers["transfer-encoding"]
+   local content_length_header = request.headers["content-length"]
 
    if transfer_encoding_header then
       if transfer_encoding_header:concat() == "chunked" then
@@ -1224,10 +1224,10 @@ end
 local ucl = require("ucl")
 local values = {
   'sessionid=abc123; user="john_doe"; theme=dark', -- valid
-  'sessionid=abc123 ;user=badsep',                 -- invalid
-  'foo@bar=baz',                                   -- invalid
-  'a=b; ',                                         -- invalid
-  'a=b',                                           -- valid
+  "sessionid=abc123 ;user=badsep",                 -- invalid
+  "foo@bar=baz",                                   -- invalid
+  "a=b; ",                                         -- invalid
+  "a=b",                                           -- valid
 }
 for _, value in ipairs(values) do
    local server = {
