@@ -807,7 +807,10 @@ end
 
 
 local function execute_parser_opcode(parser, opcode)
-   parser.opcode = opcode
+   if opcode == 0 then
+      return -- NOP
+   end
+   --parser.opcode = opcode -- DEBUG
    for op = 1, #HeaderValueParserOpCode do
       if (opcode & (1 << op)) ~= 0 then
          HeaderValueParserOpCode[op](parser)
