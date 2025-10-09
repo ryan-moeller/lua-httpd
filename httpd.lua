@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.4.0"
+M.VERSION = "0.5.0"
 
 
 -- HTTP-message = start-line
@@ -1289,7 +1289,7 @@ M.default_max_chunk_size = 16 << 20 -- 16 MiB should be enough for anyone.
 function M.create_server(logfile, input, output)
    local server = {
       state = ServerState.START_LINE,
-      log = io.open(logfile, "a"),
+      log = logfile and io.open(logfile, "a") or io.stderr,
       input = input or io.stdin,
       output = output or io.stdout,
       max_chunk_size = M.default_max_chunk_size,
