@@ -1,17 +1,63 @@
 # Pure Lua httpd
 
-httpd.lua - simple HTTP server library with zero dependencies (except inetd)
+httpd.lua - simple HTTP server library with "zero" dependencies
 
 ## Synposis
 
-Install httpd.lua in your package.path.
+Servers using `httpd.lua` perform the following core set of actions:
+
+1. Load the `httpd` module:
+
+```lua
+local httpd = require("httpd")
+```
+
+2. Create a server object:
+
+```lua
+local server = httpd.create_server()
+```
+
+3. Add routes to the server:
+
+```lua
+server:add_route(method, pattern, handler)
+```
+
+4. Run the server:
+
+```lua
+server:run()
+```
+
+The server script is executed by some inetd-style listener.
+
+Lua 5.3 or newer is required.  Some operating systems (FreeBSD, NetBSD) include
+a Lua interpreter as part of the base system.  On FreeBSD, it is installed as
+`/usr/libexec/flua`.  On other systems, Lua must be obtained separately.
+
+## Listeners
+
+Lua's standard libraries do not include built-in APIs for low-level socket
+management or connection handling.  Typical Unix-like operating systems include
+a socket-activation service, such as `inetd`, `launchd`, or `systemd`, to fill
+this role.  Tools like `socat` and `ncat` can also be used in simpler or more
+specialized scenarios.
+
+The following sections provide examples for configuring some common listeners.
+
+The sample servers assume `httpd.lua` is somewhere in your `package.path`.
+
+### inetd
+
+Typical BSD operating systems include `inetd` as part of the base system and
+generally have it installed by default.
 
 Write an executable server script, for example:
 
 `/usr/local/bin/httpd`
 ```lua
 #!/usr/bin/env lua
-
 local httpd = require("httpd")
 local server = httpd.create_server("/var/log/httpd.log")
 server:add_route("GET", "^/$", function(request)
@@ -23,7 +69,7 @@ server:run(true)
 On FreeBSD, use the shebang `#!/usr/libexec/flua` to invoke the base system's
 Lua interpreter.  No packages required!
 
-Configure inetd:
+Configure `inetd`:
 
 `/etc/inetd.conf`
 ```conf
@@ -37,10 +83,155 @@ touch /var/log/httpd.log
 chown www /var/log/httpd.log
 ```
 
-Apply the inetd configuration to start servicing requests:
+Apply the `inetd` configuration to start servicing requests:
 
 ```sh
 service inetd restart
+```
+
+### socat
+
+See `socat(1)` for details.
+
+Install `socat`:
+
+```sh
+# On FreeBSD:
+pkg install socat
+```
+
+Write a server script:
+
+`server.lua`
+```lua
+local httpd = require("httpd")
+local server = httpd.create_server()
+server:add_route("GET", "^/", function(request)
+    return { status=200, reason="ok", body="hello, world!" }
+end)
+server:run(true)
+```
+
+Start listening for connections to the server:
+
+```sh
+# listen on *:8080
+socat TCP-LISTEN:8080,fork EXEC:"lua server.lua"
+
+# listen on localhost:80, allow binding to a recently used port
+socat \
+  TCP-LISTEN:80,bind=localhost,reuseaddr,fork \
+  EXEC:"lua server.lua"
+
+# listen on *:https, using existing key.pem, cert.pem, and cacert.pem files
+socat \
+  OPENSSL-LISTEN:443,reuseaddr,fork,key=key.pem,cert=cert.pem,cafile=ca.pem \
+  EXEC:"lua server.lua"
+
+# listen on a Unix-domain socket /var/run/server
+socat UNIX-LISTEN:/var/run/server,fork EXEC:"lua server.lua"
+```
+
+### ncat
+
+See `ncat(1)` for details.
+
+```sh
+# install ncat (part of nmap)
+pkg install nmap
+# listen on *:8080
+ncat -k -l 8080 --lua-exec server.lua
+# listen on *:https, using existing key.pem, cert.pem, and cacert.pem files
+ncat \
+  --keep-open \
+  --listen 443 \
+  --ssl \
+  --ssl-key key.pem \
+  --ssl-cert cert.pem \
+  --ssl-trustfile ca.pem \
+  --lua-exec server.lua
+```
+
+### launchd
+
+Launchd supports inetd-style processes.  See `launchd.plist(5)` and Apple's
+[Dameons and Services Programming Guide][Emulating inetd] for configuration
+details.
+
+[Emulating inetd]: https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html#//apple_ref/doc/uid/10000172i-SW7-SW9
+
+For example, using `lua54` installed from [MacPorts](https://www.macports.org):
+
+`com.example.server.plist`
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+ <dict>
+  <key>Label</key>
+  <string>com.example.server</string>
+  <key>ProgramArguments</key>
+  <array>
+   <string>/opt/local/bin/lua5.4</string>
+   <string>server.lua</string>
+  </array>
+  <key>inetdCompatibility</key>
+  <dict>
+   <key>Wait</key>
+   <false/>
+  </dict>
+  <key>Sockets</key>
+  <dict>
+   <key>Listeners</key>
+   <dict>
+    <key>SocketServiceName</key>
+    <string>8080</string>
+   </dict>
+  </dict>
+ </dict>
+</plist>
+```
+
+```sh
+launchctl load com.example.server.plist
+```
+
+### systemd
+
+Systemd socket activation can be used to invoke the server.  Broadly, this
+involves installing a [`server.socket`][systemd.socket] unit and a
+[`server@.service`][systemd.exec] unit.
+
+[systemd.socket]: https://www.freedesktop.org/software/systemd/man/254/systemd.socket.html
+[systemd.exec]: https://www.freedesktop.org/software/systemd/man/254/systemd.exec.html
+
+For example:
+
+`server.socket`
+```ini
+[Unit]
+Description=Socket for Lua HTTP server
+
+[Socket]
+ListenStream=8080
+Accept=yes
+
+[Install]
+WantedBy=server.target
+```
+
+`server@.service`
+```ini
+[Unit]
+Description=Lua HTTP server
+
+[Service]
+ExecStart=lua server.lua
+```
+
+```sh
+systemctl enable server.socket
+systemctl start server.socket
 ```
 
 ## Usage
