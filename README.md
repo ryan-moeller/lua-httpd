@@ -65,7 +65,7 @@ Register a handler for a given HTTP method and Lua pattern.
 * `pattern`: Lua string pattern matched against the request path
 * `handler`: Function called as `handler(request)` returning a response table
 
-#### `server:run(verbose)`
+#### `server:run([verbose])`
 
 Run the server. Reads lines from `stdin` and dispatches requests.
 
@@ -202,11 +202,11 @@ These functions are also available from the module:
 * `httpd.parse_query_string(query) → table`
   Parse a URL query string into a table of key → `{ values }`.
 
-* `httpd.write_chunk(output, chunk, exts)`
+* `httpd.write_chunk(output, chunk[, exts])`
   Encode and write a chunk (bytes), optionally with a list of extensions.  The
   extensions are given as a list of strings.
 
-* `httpd.write_trailers(output, trailers)`
+* `httpd.write_trailers(output[, trailers])`
   Write the last chunk and optionally trailers in the same format as
   `response.headers` to conclude the response.
 
