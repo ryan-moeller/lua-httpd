@@ -41,7 +41,6 @@ end
 
 local httpd = require("httpd")
 local template = require("template")
-local ucl <const> = require("ucl")
 
 local function freebsd_version()
     local f = assert(io.popen("freebsd-version", "r"))
