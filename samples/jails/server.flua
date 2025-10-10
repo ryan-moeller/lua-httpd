@@ -10,6 +10,7 @@
 -- http    stream  tcp     nowait  root    /path/to/lua-httpd/samples/jails/server.flua    jails-server
 --
 
+local lfs <const> = require("lfs")
 local posix <const> = require("posix")
 
 local basedir <const> = posix.libgen.dirname(arg[0])
