@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.6.1"
+M.VERSION = "0.6.2"
 
 
 -- HTTP-message = start-line
@@ -204,7 +204,9 @@ local function write_http_response(server, response)
       headers["Date"] = os.date("!%a, %d %b %Y %H:%M:%S GMT")
    end
 
-   if type(body) == "string" then
+   if not body then
+      headers["Content-Length"] = 0
+   elseif type(body) == "string" then
       -- Ensure the correct Content-Length is sent.
       headers["Content-Length"] = #body
    elseif type(body) == "function" then
