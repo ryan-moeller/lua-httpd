@@ -109,14 +109,14 @@ local function handle_start_line(server, line)
 end
 
 
--- Helper for writing a list of headers/trailers.
+-- Helper for writing a list of fields.
 -- This includes the terminator.
-local function write_headers(output, headers, cookies)
+local function write_fields(output, fields, cookies)
    -- The order of field lines with different names is not significant
    -- (RFC 9110 §5.3), so iterating table keys is acceptable.
-   for name, value in pairs(headers or {}) do
+   for name, value in pairs(fields or {}) do
       if type(value) == "table" then
-         -- Accept an ordered list of values for repeated headers.
+         -- Accept an ordered list of values for repeated fields.
          for _, v in ipairs(value) do
             output:write(name, ": ", v, "\r\n")
          end
@@ -135,12 +135,23 @@ local function write_headers(output, headers, cookies)
 end
 
 
-local function header_contains_value(header, value)
-   if header == value then
+-- expects lowercase name
+local function find_field(fields, search_name)
+   for name, field in pairs(fields or {}) do
+      if name:lower() == search_name then
+         return name, field
+      end
+   end
+end
+
+
+local function field_contains_value(field, search_value)
+   if field == search_value then
       return true
-   elseif type(header) == "table" then
-      for _, v in ipairs(header) do
-         if v == value then
+   elseif type(field) == "table" then
+      for _, value in ipairs(field) do
+         -- XXX: doesn't handle params. parse response fields?
+         if value == search_value then
             return true
          end
       end
@@ -162,28 +173,31 @@ local function write_http_response(server, response)
    local cookies = response.cookies
    local body = response.body
 
-   -- TODO: normalize response header names
-
    -- MUST generate a Date header field in certain cases (RFC 9110 §6.6.1)
    -- Doesn't hurt to always send one.
-   if not headers["Date"] and not headers["date"] then
+   if not find_field(headers, "date") then
       headers["Date"] = os.date("!%a, %d %b %Y %H:%M:%S GMT")
    end
 
    if type(body) == "string" then
-      headers["Content-Length"] = #body
+      local field_name = find_field(headers, "content-length")
+      headers[field_name or "Content-Length"] = #body
    elseif type(body) == "function" then
       -- Send "Connection: close" when trying to send a body with unknown length
       -- and not using chunked transfer encoding.  Take care not to interfere
       -- with connection upgrades.
-      if not headers["Content-Length"] and not headers["content-length"] then
-         local te = headers["Transfer-Encoding"] or headers["transfer-encoding"]
-         if not te or not header_contains_value(te, "chunked") then
-            local connection = headers["Connection"] or headers["connection"]
+      if not find_field(headers, "content-length") then
+         local _, te = find_field(headers, "transfer-encoding")
+         if not field_contains_value(te, "chunked") then
+            local field_name, connection = find_field(headers, "connection")
             if connection then
-               if not header_contains_value(connection, "close") and
-                  not header_contains_value(connection, "Upgrade") then
-                  table.insert(connection, "close")
+               if not field_contains_value(connection, "close") and
+                  not field_contains_value(connection, "Upgrade") then
+                  if type(connection) == "table" then
+                     table.insert(connection, "close")
+                  else
+                     headers[field_name] = {connection, "close"}
+                  end
                end
             else
                headers["Connection"] = "close"
@@ -195,7 +209,7 @@ local function write_http_response(server, response)
    local statusline = string.format("HTTP/1.1 %03d %s\r\n", status, reason)
    output:write(statusline)
 
-   write_headers(output, headers, cookies)
+   write_fields(output, headers, cookies)
 
    if type(body) == "string" then
       output:write(body)
@@ -284,9 +298,8 @@ local function handle_request(server)
    -- HTTP/1.1 connections are keep-alive by default.
    local req_connection = request.headers["connection"]
    local req_close = req_connection and req_connection:contains_value("close")
-   local res_connection = response.headers and response.headers["Connection"] or
-      response.headers["connection"]
-   local res_close = header_contains_value(res_connection, "close")
+   local _, res_connection = find_field(response.headers, "connection")
+   local res_close = field_contains_value(res_connection, "close")
    if req_close or res_close then
       close_connection(server)
       -- TODO: Accommodate a persistent server with an accept loop.  For now, we
@@ -301,7 +314,7 @@ local function handle_request(server)
 end
 
 
--- Header format:
+-- Field format:
 --
 -- {
 --    unvalidated = { "t;n=v;a (comment) (and (a nested comment) too)", ... },
@@ -324,7 +337,7 @@ end
 --    }
 -- }
 --
--- The `raw` and `elements` fields of a header invoke the parser on first access
+-- The `raw` and `elements` members of a field invoke the parser on first access
 -- and cache the result.
 --
 -- The `value`, `params`, and `comments` attributes of an element are optional.
@@ -340,8 +353,8 @@ end
 --             listed in order of reception
 
 
--- Header value lexer FSM states
-local HeaderValueLexerState = {
+-- Field value lexer FSM states
+local FieldValueLexerState = {
    -- REMEMBER: these must be contiguous values in order starting from 0
    OWS = 0,
    TOKEN = 1,
@@ -362,30 +375,30 @@ local HeaderValueLexerState = {
 
 
 -- Which states are in the set of accept states for structured data?
-local HeaderValueLexerAccept = {
+local FieldValueLexerAccept = {
    -- REMEMBER: these must be contiguous keys in order starting from 1 (thus +1)
-   [HeaderValueLexerState.OWS + 1] = true,
-   [HeaderValueLexerState.TOKEN + 1] = true,
-   [HeaderValueLexerState.LIST_DELIMITER + 1] = true,
-   [HeaderValueLexerState.QUOTED_STRING_BEGIN + 1] = false,
-   [HeaderValueLexerState.QUOTED_STRING + 1] = false,
-   [HeaderValueLexerState.QUOTED_STRING_END + 1] = true,
-   [HeaderValueLexerState.ESCAPE + 1] = false,
-   [HeaderValueLexerState.COMMENT_OPEN + 1] = false,
-   [HeaderValueLexerState.COMMENT + 1] = false,
-   [HeaderValueLexerState.COMMENT_CLOSE + 1] = true,
-   [HeaderValueLexerState.PARAMETER + 1] = true, -- optional in parameters
-   [HeaderValueLexerState.PARAMETER_NAME + 1] = true,
-   [HeaderValueLexerState.PARAMETER_VALUE + 1] = false, -- "=" must be followed
-   [HeaderValueLexerState.CONTENT + 1] = false, -- not structured
+   [FieldValueLexerState.OWS + 1] = true,
+   [FieldValueLexerState.TOKEN + 1] = true,
+   [FieldValueLexerState.LIST_DELIMITER + 1] = true,
+   [FieldValueLexerState.QUOTED_STRING_BEGIN + 1] = false,
+   [FieldValueLexerState.QUOTED_STRING + 1] = false,
+   [FieldValueLexerState.QUOTED_STRING_END + 1] = true,
+   [FieldValueLexerState.ESCAPE + 1] = false,
+   [FieldValueLexerState.COMMENT_OPEN + 1] = false,
+   [FieldValueLexerState.COMMENT + 1] = false,
+   [FieldValueLexerState.COMMENT_CLOSE + 1] = true,
+   [FieldValueLexerState.PARAMETER + 1] = true, -- optional in parameters
+   [FieldValueLexerState.PARAMETER_NAME + 1] = true,
+   [FieldValueLexerState.PARAMETER_VALUE + 1] = false, -- "=" must be followed
+   [FieldValueLexerState.CONTENT + 1] = false, -- not structured
    -- We can omit ERROR, as transitioning into ERROR halts the FSM.
 }
 -- Sanity check the array layout.
-assert(#HeaderValueLexerAccept == HeaderValueLexerState.ERROR)
+assert(#FieldValueLexerAccept == FieldValueLexerState.ERROR)
 
 
--- The lexer FSM initialization is deferred until we parse a header.
-local HeaderValueLexerFSM = nil
+-- The lexer FSM initialization is deferred until we parse a field.
+local FieldValueLexerFSM = nil
 
 
 -- Compile the production rules for the FSM into a VM-optimimized table.
@@ -411,11 +424,11 @@ local function build_lexer_fsm()
    -- gives us space for 256 * the number of states, i.e. Nstates * Nbytes.
    --
    -- There isn't a convenient way to get the number of entries in a hash table,
-   -- so we use the size of the HeaderValueLexerAccept array instead.  The FSM
+   -- so we use the size of the FieldValueLexerAccept array instead.  The FSM
    -- and Accept tables exclude the ERROR state to avoid wasting time and space.
-   for i = 1, (#HeaderValueLexerAccept) << 8 do
+   for i = 1, (#FieldValueLexerAccept) << 8 do
       -- Anything not caught by the rules below is invalid.
-      fsm[i] = HeaderValueLexerState.ERROR
+      fsm[i] = FieldValueLexerState.ERROR
    end
 
    -- The setters table provides the different methods for interpreting the
@@ -479,14 +492,14 @@ local function build_lexer_fsm()
    -- Add a list of rules to the FSM.
    local function state_rules(state, rules)
       -- §5.5 Field Values
-      expand(state, {{WSP, field_vchar}, HeaderValueLexerState.CONTENT})
+      expand(state, {{WSP, field_vchar}, FieldValueLexerState.CONTENT})
       -- §5.6 Common Rules for Defining Field Values (optimistic)
       for _, rule in ipairs(rules) do
          expand(state, rule)
       end
    end
 
-   -- Build the lookup table for the header value lexer FSM.
+   -- Build the lookup table for the field value lexer FSM.
    --
    -- We declare the table in a more human-friendly form which is expanded to a
    -- machine-optimized form at runtime.  The human-friendly version uses rules
@@ -513,67 +526,67 @@ local function build_lexer_fsm()
    -- References: RFC 9110 §5.5, §5.6
    local element_rules = {
       -- §5.6.1 Lists, §5.6.6 Parameters
-      {WSP, HeaderValueLexerState.OWS},
+      {WSP, FieldValueLexerState.OWS},
       -- §5.6.1 Lists
-      {comma, HeaderValueLexerState.LIST_DELIMITER},
+      {comma, FieldValueLexerState.LIST_DELIMITER},
       -- §5.6.2 Tokens
-      {tchar, HeaderValueLexerState.TOKEN},
+      {tchar, FieldValueLexerState.TOKEN},
       -- §5.6.4 Quoted Strings
-      {DQUOTE, HeaderValueLexerState.QUOTED_STRING_BEGIN},
+      {DQUOTE, FieldValueLexerState.QUOTED_STRING_BEGIN},
       -- §5.6.5 Comments
-      {lparen, HeaderValueLexerState.COMMENT_OPEN},
+      {lparen, FieldValueLexerState.COMMENT_OPEN},
       -- §5.6.6 Parameters
-      {semicolon, HeaderValueLexerState.PARAMETER},
+      {semicolon, FieldValueLexerState.PARAMETER},
    }
    local string_rules = {
       -- §5.6.4 Quoted Strings
       -- Note: Exceptions from this range are made by the later rules.
-      {{WSP, VCHAR, obs_text}, HeaderValueLexerState.QUOTED_STRING},
-      {DQUOTE, HeaderValueLexerState.QUOTED_STRING_END},
-      {backslash, HeaderValueLexerState.ESCAPE},
+      {{WSP, VCHAR, obs_text}, FieldValueLexerState.QUOTED_STRING},
+      {DQUOTE, FieldValueLexerState.QUOTED_STRING_END},
+      {backslash, FieldValueLexerState.ESCAPE},
    }
    local comment_rules = {
       -- §5.6.5 Comments
       -- Note: Exceptions from this range are made by the later rules.
-      {{WSP, VCHAR, obs_text}, HeaderValueLexerState.COMMENT},
-      {lparen, HeaderValueLexerState.COMMENT_OPEN},
-      {rparen, HeaderValueLexerState.COMMENT_CLOSE},
-      {backslash, HeaderValueLexerState.ESCAPE},
+      {{WSP, VCHAR, obs_text}, FieldValueLexerState.COMMENT},
+      {lparen, FieldValueLexerState.COMMENT_OPEN},
+      {rparen, FieldValueLexerState.COMMENT_CLOSE},
+      {backslash, FieldValueLexerState.ESCAPE},
    }
-   state_rules(HeaderValueLexerState.OWS, element_rules)
-   state_rules(HeaderValueLexerState.TOKEN, {
+   state_rules(FieldValueLexerState.OWS, element_rules)
+   state_rules(FieldValueLexerState.TOKEN, {
       -- §5.6.1 Lists, §5.6.6 Parameters
-      {WSP, HeaderValueLexerState.OWS},
+      {WSP, FieldValueLexerState.OWS},
       -- §5.6.1 Lists
-      {comma, HeaderValueLexerState.LIST_DELIMITER},
+      {comma, FieldValueLexerState.LIST_DELIMITER},
       -- §5.6.2 Tokens
-      {tchar, HeaderValueLexerState.TOKEN},
+      {tchar, FieldValueLexerState.TOKEN},
       -- §5.6.5 Comments
-      {lparen, HeaderValueLexerState.COMMENT_OPEN},
+      {lparen, FieldValueLexerState.COMMENT_OPEN},
       -- §5.6.6 Parameters
-      {semicolon, HeaderValueLexerState.PARAMETER},
+      {semicolon, FieldValueLexerState.PARAMETER},
    })
-   state_rules(HeaderValueLexerState.LIST_DELIMITER, element_rules)
-   state_rules(HeaderValueLexerState.QUOTED_STRING_BEGIN, string_rules)
-   state_rules(HeaderValueLexerState.QUOTED_STRING, string_rules)
-   state_rules(HeaderValueLexerState.QUOTED_STRING_END, {
+   state_rules(FieldValueLexerState.LIST_DELIMITER, element_rules)
+   state_rules(FieldValueLexerState.QUOTED_STRING_BEGIN, string_rules)
+   state_rules(FieldValueLexerState.QUOTED_STRING, string_rules)
+   state_rules(FieldValueLexerState.QUOTED_STRING_END, {
       -- §5.6.1 Lists, §5.6.6 Parameters
-      {WSP, HeaderValueLexerState.OWS},
+      {WSP, FieldValueLexerState.OWS},
       -- §5.6.1 Lists
-      {comma, HeaderValueLexerState.LIST_DELIMITER},
+      {comma, FieldValueLexerState.LIST_DELIMITER},
       -- §5.6.5 Comments
-      {lparen, HeaderValueLexerState.COMMENT_OPEN},
+      {lparen, FieldValueLexerState.COMMENT_OPEN},
       -- §5.6.6 Parameters
-      {semicolon, HeaderValueLexerState.PARAMETER},
+      {semicolon, FieldValueLexerState.PARAMETER},
    })
-   state_rules(HeaderValueLexerState.ESCAPE, {
+   state_rules(FieldValueLexerState.ESCAPE, {
       -- §5.6.4 Quoted Strings, §5.6.5 Comments
       -- Note: The parser is responsible for interpreting ESCAPE->ESCAPE as a
       -- return to either QUOTED_STRING or COMMENT.
-      {{WSP, VCHAR, obs_text}, HeaderValueLexerState.ESCAPE},
+      {{WSP, VCHAR, obs_text}, FieldValueLexerState.ESCAPE},
    })
-   state_rules(HeaderValueLexerState.COMMENT_OPEN, comment_rules)
-   state_rules(HeaderValueLexerState.COMMENT, comment_rules)
+   state_rules(FieldValueLexerState.COMMENT_OPEN, comment_rules)
+   state_rules(FieldValueLexerState.COMMENT, comment_rules)
    -- Note: The grammar defines comments recursively, allowing arbitrary
    -- nesting via balanced pairs of parentheses.  It is the parser's
    -- responsibility to track the nesting depth and avoid treating the
@@ -582,30 +595,30 @@ local function build_lexer_fsm()
    -- must advance the FSM to the COMMENT state instead of COMMENT_CLOSE.
    --
    -- The following rules encode the transitions when the comment IS closed.
-   state_rules(HeaderValueLexerState.COMMENT_CLOSE, element_rules)
-   state_rules(HeaderValueLexerState.PARAMETER, {
+   state_rules(FieldValueLexerState.COMMENT_CLOSE, element_rules)
+   state_rules(FieldValueLexerState.PARAMETER, {
       -- §5.6.6 Parameters
-      {{WSP, semicolon}, HeaderValueLexerState.PARAMETER},
-      {tchar, HeaderValueLexerState.PARAMETER_NAME},
+      {{WSP, semicolon}, FieldValueLexerState.PARAMETER},
+      {tchar, FieldValueLexerState.PARAMETER_NAME},
    })
-   state_rules(HeaderValueLexerState.PARAMETER_NAME, {
+   state_rules(FieldValueLexerState.PARAMETER_NAME, {
       -- §5.6.1 Lists, §5.6.6 Parameters
-      {WSP, HeaderValueLexerState.OWS},
+      {WSP, FieldValueLexerState.OWS},
       -- §5.6.1 Lists
-      {comma, HeaderValueLexerState.LIST_DELIMITER},
+      {comma, FieldValueLexerState.LIST_DELIMITER},
       -- §5.6.2 Tokens, §5.6.6 Parameters
-      {semicolon, HeaderValueLexerState.PARAMETER},
-      {tchar, HeaderValueLexerState.PARAMETER_NAME},
-      {equals, HeaderValueLexerState.PARAMETER_VALUE},
+      {semicolon, FieldValueLexerState.PARAMETER},
+      {tchar, FieldValueLexerState.PARAMETER_NAME},
+      {equals, FieldValueLexerState.PARAMETER_VALUE},
    })
-   state_rules(HeaderValueLexerState.PARAMETER_VALUE, {
+   state_rules(FieldValueLexerState.PARAMETER_VALUE, {
       -- §5.6.6 Parameters
       -- §5.6.2 Tokens
-      {tchar, HeaderValueLexerState.TOKEN},
+      {tchar, FieldValueLexerState.TOKEN},
       -- §5.6.4 Quoted Strings
-      {DQUOTE, HeaderValueLexerState.QUOTED_STRING_BEGIN},
+      {DQUOTE, FieldValueLexerState.QUOTED_STRING_BEGIN},
    })
-   state_rules(HeaderValueLexerState.CONTENT, {
+   state_rules(FieldValueLexerState.CONTENT, {
       -- §5.5 Field Values
       -- The content rules are implicit.  We just need to call state_rules with
       -- an empty table to fill in the default rules.
@@ -622,24 +635,24 @@ local function build_lexer_fsm()
 end
 
 
--- The header value parser encodes its behavior in a LUT.  The index into the
--- LUT is constructed from the lexer state transition (s, n), where s is the
--- current state of the lexer and n is the next state of the lexer.  Concretely,
--- the index is `((s << 4) | n) + 1`.  There are ten lexer states, so we need
--- four lower bits and four higher bits.  The +1 offset is required for Lua's
+-- The field value parser encodes its behavior in a LUT.  The index into the LUT
+-- is constructed from the lexer state transition (s, n), where s is the current
+-- state of the lexer and n is the next state of the lexer.  Concretely, the
+-- index is `((s << 4) | n) + 1`.  There are ten lexer states, so we need four
+-- lower bits and four higher bits.  The +1 offset is required for Lua's
 -- array-backed tables, which expect indices to start at 1 for optimal
 -- performance.
 --
 -- The parser LUT stores an opcode for each state transition.  The opcode is a
 -- bitfield encoding the operations to be performed on the parser state.  Each
--- HeaderValueParserOp represents a bit in the opcode and a corresponding
--- function in the HeaderValueParserOpCode table.  The op is used as a shift
--- amount in the opcode bitfield and as an index in the HeaderValueParserOpCode
--- table.  The HeaderValueParserOpCode table is again constrained to 1-based
+-- FieldValueParserOp represents a bit in the opcode and a corresponding
+-- function in the FieldValueParserOpCode table.  The op is used as a shift
+-- amount in the opcode bitfield and as an index in the FieldValueParserOpCode
+-- table.  The FieldValueParserOpCode table is again constrained to 1-based
 -- indexing by Lua's array-backed table, so the least-significant bit of
 -- the opcode (corresponding to the unused shift amount 0) is available for
 -- future use.
-local HeaderValueParserOp = {
+local FieldValueParserOp = {
    -- REMEMBER: these must be contiguous values in order starting from 1
    ESCAPE = 1,
    MARK = 2,
@@ -658,23 +671,23 @@ local HeaderValueParserOp = {
 -- Implement the set of parser operations.  Each operation performs a mutation
 -- on a parser object.  Multiple operations can be combined to form an opcode.
 -- This table contains the code for the operations, not opcodes.
-local HeaderValueParserOpCode = {
+local FieldValueParserOpCode = {
    -- REMEMBER: these must contiguous values in order starting from 1
-   [HeaderValueParserOp.ESCAPE] = function(parser)
+   [FieldValueParserOp.ESCAPE] = function(parser)
       local chunk = parser.value:sub(parser.mark, parser.pos - 1)
       table.insert(parser.stack, chunk)
    end,
-   [HeaderValueParserOp.MARK] = function(parser)
+   [FieldValueParserOp.MARK] = function(parser)
       parser.mark = parser.pos
    end,
-   [HeaderValueParserOp.COMMENT] = function(parser)
+   [FieldValueParserOp.COMMENT] = function(parser)
       -- TODO: save the comment structure?
       parser.comment_depth = parser.comment_depth + 1
    end,
-   [HeaderValueParserOp.START_ITEM] = function(parser)
+   [FieldValueParserOp.START_ITEM] = function(parser)
       parser.current_element = parser.current_element or {}
    end,
-   [HeaderValueParserOp.PUSH_TOKEN] = function(parser)
+   [FieldValueParserOp.PUSH_TOKEN] = function(parser)
       local value = parser.value:sub(parser.mark, parser.pos - 1)
 
       local element = parser.current_element
@@ -682,7 +695,7 @@ local HeaderValueParserOpCode = {
 
       local name = parser.param_name
 
-      if parser.lexer_state == HeaderValueLexerState.PARAMETER_NAME then
+      if parser.lexer_state == FieldValueLexerState.PARAMETER_NAME then
          element.params = element.params or {}
          parser.param_name = value
       elseif name then
@@ -694,10 +707,10 @@ local HeaderValueParserOpCode = {
          -- If a value was already set then this is not a valid structure.
          -- Discard any staged elements and validate the rest as raw content.
          parser.staged_elements = {}
-         parser.next_lexer_state = HeaderValueLexerState.CONTENT
+         parser.next_lexer_state = FieldValueLexerState.CONTENT
       end
    end,
-   [HeaderValueParserOp.PUSH_QUOTED] = function(parser)
+   [FieldValueParserOp.PUSH_QUOTED] = function(parser)
       local chunk = parser.value:sub(parser.mark, parser.pos - 1)
       table.insert(parser.stack, chunk)
 
@@ -718,43 +731,43 @@ local HeaderValueParserOpCode = {
          -- If a value was already set then this is not a valid structure.
          -- Discard any staged elements and validate the rest as raw content.
          parser.staged_elements = {}
-         parser.next_lexer_state = HeaderValueLexerState.CONTENT
+         parser.next_lexer_state = FieldValueLexerState.CONTENT
       end
    end,
-   [HeaderValueParserOp.PUSH_COMMENT] = function(parser)
+   [FieldValueParserOp.PUSH_COMMENT] = function(parser)
       local depth = parser.comment_depth - 1
       assert(depth >= 0)
       if depth > 0 then
-         parser.next_lexer_state = HeaderValueLexerState.COMMENT
+         parser.next_lexer_state = FieldValueLexerState.COMMENT
          -- TODO: save the comment structure?
       end
       parser.comment_depth = depth
       -- Clear any escape chunks for now.  Revise when comments are saved.
       parser.stack = {}
    end,
-   [HeaderValueParserOp.SET_PARAM] = function(parser)
+   [FieldValueParserOp.SET_PARAM] = function(parser)
       assert(parser.param_name, "SET_PARAM: no param name")
       table.insert(parser.current_element.params, {attribute=parser.param_name})
       parser.param_name = nil
    end,
-   [HeaderValueParserOp.END_ITEM] = function(parser)
+   [FieldValueParserOp.END_ITEM] = function(parser)
       local element = parser.current_element
       assert(element, "END_ITEM: no current element")
       table.insert(parser.staged_elements, element)
       parser.current_element = nil
    end,
-   [HeaderValueParserOp.RETURN] = function(parser)
+   [FieldValueParserOp.RETURN] = function(parser)
       local prev_lexer_state = parser.prev_lexer_state
-      if prev_lexer_state == HeaderValueLexerState.QUOTED_STRING_BEGIN then
-         parser.next_lexer_state = HeaderValueLexerState.QUOTED_STRING
-      elseif prev_lexer_state == HeaderValueLexerState.COMMENT_OPEN then
-         parser.next_lexer_state = HeaderValueLexerState.COMMENT
+      if prev_lexer_state == FieldValueLexerState.QUOTED_STRING_BEGIN then
+         parser.next_lexer_state = FieldValueLexerState.QUOTED_STRING
+      elseif prev_lexer_state == FieldValueLexerState.COMMENT_OPEN then
+         parser.next_lexer_state = FieldValueLexerState.COMMENT
       else
          parser.next_lexer_state = prev_lexer_state
       end
    end,
    --[[ DEBUG
-   [HeaderValueParserOp.TRACE] = function(parser)
+   [FieldValueParserOp.TRACE] = function(parser)
       io.stderr:write(("trace on opcode=%#x byte=%#x\n")
          :format(parser.opcode, parser.byte))
    end,
@@ -762,8 +775,8 @@ local HeaderValueParserOpCode = {
 }
 
 
--- Initialization of the parser LUTs is deferred until we parse a header.
-local HeaderValueParserLUT, HeaderValueParserFinalLUT = nil, nil
+-- Initialization of the parser LUTs is deferred until we parse a field.
+local FieldValueParserLUT, FieldValueParserFinalLUT = nil, nil
 
 
 -- Compile the parser operations performed on lexer state transitions into
@@ -772,8 +785,8 @@ local function build_parser_luts()
    local lut = {}
    local final = {}
 
-   local S = HeaderValueLexerState
-   local O = HeaderValueParserOp
+   local S = FieldValueLexerState
+   local O = FieldValueParserOp
 
    -- The parser LUT index is two 4-bit fields, so 8 bits total = 256 entries.
    for i = 1, 256 do
@@ -782,8 +795,8 @@ local function build_parser_luts()
 
    -- There is no direct way to get the number of states, but it is the size of
    -- the lexer FSM / 256, i.e. eliminating the input byte portion of the index.
-   -- Note the parentheses to avoid being parsed as #(HeaderValueLexerFSM >> 8).
-   for i = 1, (#HeaderValueLexerFSM) >> 8 do
+   -- Note the parentheses to avoid being parsed as #(FieldValueLexerFSM >> 8).
+   for i = 1, (#FieldValueLexerFSM) >> 8 do
       final[i] = 0 -- NOP
    end
 
@@ -878,9 +891,9 @@ local function execute_parser_opcode(parser, opcode)
       return -- NOP
    end
    --parser.opcode = opcode -- DEBUG
-   for op = 1, #HeaderValueParserOpCode do
+   for op = 1, #FieldValueParserOpCode do
       if (opcode & (1 << op)) ~= 0 then
-         HeaderValueParserOpCode[op](parser)
+         FieldValueParserOpCode[op](parser)
       end
    end
 end
@@ -890,20 +903,19 @@ end
 --
 -- These limits are lenient by a huge margin but help the parser ignore
 -- pathological input.  If you're expecting huge quoted strings with an
--- absurd number of escapes in your headers and run into this limit, it
+-- absurd number of escapes in your fields and run into this limit, it
 -- can be raised on the module table before running the server.
-M.header_value_parser_stack_size_limit = 1000
-M.header_value_parser_comment_depth_limit = 100
+M.field_value_parser_stack_size_limit = 1000
+M.field_value_parser_comment_depth_limit = 100
 
 
-local function parse_header_value_impl(header, value)
+local function parse_field_value_impl(field, value)
    local stack = {}
-   local stack_size_limit = M.header_value_parser_stack_size_limit
-   local comment_depth_limit = M.header_value_parser_comment_depth_limit
+   local stack_size_limit = M.field_value_parser_stack_size_limit
+   local comment_depth_limit = M.field_value_parser_comment_depth_limit
    local parser = {
-      header = header,
       value = value,
-      next_lexer_state = HeaderValueLexerState.OWS,
+      next_lexer_state = FieldValueLexerState.OWS,
       pos = 1,
       stack = stack,
       comment_depth = 0,
@@ -914,9 +926,9 @@ local function parse_header_value_impl(header, value)
       local byte = value:byte(parser.pos)
       local lexer_state = parser.next_lexer_state
       local lexer_index = ((lexer_state << 8) | byte) + 1
-      local next_lexer_state = assert(HeaderValueLexerFSM[lexer_index])
+      local next_lexer_state = assert(FieldValueLexerFSM[lexer_index])
 
-      if next_lexer_state == HeaderValueLexerState.ERROR or
+      if next_lexer_state == FieldValueLexerState.ERROR or
          -- Ignore pathological input.
          #stack > stack_size_limit or
          parser.comment_depth > comment_depth_limit then
@@ -925,7 +937,7 @@ local function parse_header_value_impl(header, value)
       end
 
       local parser_index = ((lexer_state << 4) | next_lexer_state) + 1
-      local opcode = assert(HeaderValueParserLUT[parser_index])
+      local opcode = assert(FieldValueParserLUT[parser_index])
 
       parser.byte = byte
       parser.prev_lexer_state = parser.lexer_state
@@ -937,7 +949,7 @@ local function parse_header_value_impl(header, value)
 
    -- Finalize any pending structures.
    local lexer_state = parser.next_lexer_state
-   local opcode = assert(HeaderValueParserFinalLUT[lexer_state + 1])
+   local opcode = assert(FieldValueParserFinalLUT[lexer_state + 1])
 
    parser.byte = 0
    parser.prev_lexer_state = parser.lexer_state
@@ -945,37 +957,37 @@ local function parse_header_value_impl(header, value)
    parser.next_lexer_state = nil
    execute_parser_opcode(parser, opcode)
 
-   -- Update the header.
-   if HeaderValueLexerAccept[lexer_state + 1] then
+   -- Update the field.
+   if FieldValueLexerAccept[lexer_state + 1] then
       for _, element in ipairs(parser.staged_elements) do
-         table.insert(header.elements, element)
+         table.insert(field.elements, element)
       end
    end
-   table.insert(header.raw, value)
+   table.insert(field.raw, value)
 end
 
 
-local function parse_header_value(header, value)
+local function parse_field_value(field, value)
    -- Lazy lexer/parser construction
    --
-   -- Some requests may not require header inspection at all.  We don't need the
+   -- Some requests may not require field inspection at all.  We don't need the
    -- lexer/parser machinery unless we end up here.
-   HeaderValueLexerFSM = build_lexer_fsm()
-   HeaderValueParserLUT, HeaderValueParserFinalLUT = build_parser_luts()
+   FieldValueLexerFSM = build_lexer_fsm()
+   FieldValueParserLUT, FieldValueParserFinalLUT = build_parser_luts()
    -- This little trick avoids adding a branch to check for initialization every
-   -- time we parse a header.
-   parse_header_value = parse_header_value_impl
-   parse_header_value(header, value)
+   -- time we parse a field.
+   parse_field_value = parse_field_value_impl
+   parse_field_value(field, value)
 end
 
 
-local header_methods = {
-   concat = function(header, ...)
-      return table.concat(header.raw, ...)
+local field_methods = {
+   concat = function(field, ...)
+      return table.concat(field.raw, ...)
    end,
 
-   contains_value = function(header, value)
-      for _, element in ipairs(header.elements) do
+   contains_value = function(field, value)
+      for _, element in ipairs(field.elements) do
          if element.value == value then
             return true
          end
@@ -983,9 +995,9 @@ local header_methods = {
       return false
    end,
 
-   find_elements = function(header, value)
+   find_elements = function(field, value)
       local matches = {}
-      for _, element in ipairs(header.elements) do
+      for _, element in ipairs(field.elements) do
          if element.value == value then
             table.insert(matches, element)
          end
@@ -997,23 +1009,23 @@ local header_methods = {
 }
 
 
-local header_metatable = {
-   __index = function(header, key)
+local field_metatable = {
+   __index = function(field, key)
       if key ~= "raw" and key ~= "elements" then
-         return header_methods[key]
+         return field_methods[key]
       end
-      header.raw = {} -- list of all raw (but validated) field values
-      header.elements = {} -- list of structured elements
-      for _, value in ipairs(header.unvalidated) do
-         parse_header_value(header, value)
+      field.raw = {} -- list of all raw (but validated) field values
+      field.elements = {} -- list of structured elements
+      for _, value in ipairs(field.unvalidated) do
+         parse_field_value(field, value)
       end
-      return header[key]
+      return field[key]
    end,
 }
 
 
-local function new_header()
-   return setmetatable({unvalidated={}}, header_metatable)
+local function new_field()
+   return setmetatable({unvalidated={}}, field_metatable)
 end
 
 
@@ -1037,31 +1049,31 @@ local values = {
 local ucl = require("ucl")
 for _, value in ipairs(values) do
    print("field value: ", value)
-   local header = new_header()
-   table.insert(header.unvalidated, value)
-   -- Note if tracing is added to parse_header_value() that it is invoked once
+   local field = new_field()
+   table.insert(field.unvalidated, value)
+   -- Note if tracing is added to parse_field_value() that it is invoked once
    -- for `raw` but not again for `elements`, because the result is memoized.
-   print("raw: ", ucl.to_json(header.raw))
-   print("elements: ", ucl.to_json(header.elements))
+   print("raw: ", ucl.to_json(field.raw))
+   print("elements: ", ucl.to_json(field.elements))
 end
 --]]--
 
 
-local function update_header_table(t, name, value)
-   -- Header parsing is deferred until either header.raw or header.elements is
+local function update_fields(fields, name, value)
+   -- Field parsing is deferred until either field.raw or field.elements is
    -- accessed (potentially by a convenience method).
    --
    -- Just accumulate unvalidated input values in a list for now.
    --
-   -- TODO: Validation/parsing for all headers could be forced by a server
+   -- TODO: Validation/parsing for all fields could be forced by a server
    -- configuration parameter.
-   local header = t[name] or new_header()
-   table.insert(header.unvalidated, value)
-   t[name] = header
+   local field = fields[name] or new_field()
+   table.insert(field.unvalidated, value)
+   fields[name] = field
 end
 
 
-local function parse_header_field(line)
+local function parse_field(line)
    return line:match("^(%g+):[ \t]*(.-)[ \t]*\r$")
 end
 
@@ -1072,14 +1084,14 @@ local function handle_trailer_field(server, line)
       -- That marks the end of this request.
       return ServerState.START_LINE
    else
-      local name, value = parse_header_field(line)
+      local name, value = parse_field(line)
 
       if name then
-         -- Header field names are case-insensitive.
+         -- Field names are case-insensitive.
          local lname = string.lower(name)
          -- Cookies received in trailers are intentionally ignored.
          -- We'll just throw them in with the trailers instead.
-         update_header_table(server.request.trailers, name, value)
+         update_fields(server.request.trailers, name, value)
       else
          server.log:write("Ignoring invalid trailer: ", line, "\n")
       end
@@ -1293,15 +1305,15 @@ local function handle_header_field(server, line)
       -- When there are no headers left we get just a blank line.
       return handle_blank_line(server)
    else
-      local name, value = parse_header_field(line)
+      local name, value = parse_field(line)
 
       if name then
-         -- Header field names are case-insensitive.
+         -- Field names are case-insensitive.
          local lname = string.lower(name)
          if lname == "cookie" then
             set_cookies(server, value)
          else
-            update_header_table(server.request.headers, lname, value)
+            update_fields(server.request.headers, lname, value)
          end
       else
          server.log:write("Ignoring invalid header: ", line, "\n")
@@ -1347,6 +1359,7 @@ function M.create_server(logfile, input, output)
       handlers = {},
    }
 
+   -- TODO: make log readable with concurrent connections
    server.log:setvbuf("no")
 
    function server:add_route(method, pattern, handler)
@@ -1390,7 +1403,7 @@ end
 -- Helper for concluding chunk-encoded body transfers
 function M.write_trailers(output, trailers)
    output:write("0\r\n")
-   write_headers(output, trailers)
+   write_fields(output, trailers)
 end
 
 
