@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.5.0"
+M.VERSION = "0.5.1"
 
 
 -- HTTP-message = start-line
@@ -135,6 +135,20 @@ local function write_headers(output, headers, cookies)
 end
 
 
+local function header_contains_value(header, value)
+   if header == value then
+      return true
+   elseif type(header) == "table" then
+      for _, v in ipairs(header) do
+         if v == value then
+            return true
+         end
+      end
+   end
+   return false
+end
+
+
 -- expects a server table and a response table
 -- example response table:
 -- { status=404, reason="not found", headers={}, cookies={},
@@ -148,16 +162,34 @@ local function write_http_response(server, response)
    local cookies = response.cookies
    local body = response.body
 
-   -- TODO: normalize header names
+   -- TODO: normalize response header names
 
    -- MUST generate a Date header field in certain cases (RFC 9110 §6.6.1)
    -- Doesn't hurt to always send one.
-   if not headers["Date"] then
+   if not headers["Date"] and not headers["date"] then
       headers["Date"] = os.date("!%a, %d %b %Y %H:%M:%S GMT")
    end
 
    if type(body) == "string" then
       headers["Content-Length"] = #body
+   elseif type(body) == "function" then
+      -- Send "Connection: close" when trying to send a body with unknown length
+      -- and not using chunked transfer encoding.  Take care not to interfere
+      -- with connection upgrades.
+      if not headers["Content-Length"] and not headers["content-length"] then
+         local te = headers["Transfer-Encoding"] or headers["transfer-encoding"]
+         if not te or not header_contains_value(te, "chunked") then
+            local connection = headers["Connection"] or headers["connection"]
+            if connection then
+               if not header_contains_value(connection, "close") and
+                  not header_contains_value(connection, "Upgrade") then
+                  table.insert(connection, "close")
+               end
+            else
+               headers["Connection"] = "close"
+            end
+         end
+      end
    end
 
    local statusline = string.format("HTTP/1.1 %03d %s\r\n", status, reason)
