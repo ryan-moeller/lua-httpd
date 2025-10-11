@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.6.0"
+M.VERSION = "0.6.1"
 
 
 -- HTTP-message = start-line
@@ -1202,15 +1202,14 @@ end
 
 local function handle_message_body(server, content_length)
    local body = ""
-   repeat
+   while #body < content_length do
       local buf = server.input:read(content_length - #body)
-      if buf then
-         body = body .. buf
-      else
+      if not buf or #buf == 0 then
          server.log:write("body shorter than specified content length\n")
          break
       end
-   until #body == content_length
+      body = body .. buf
+   end
 
    if server.verbose then
       server.log:write("content length = ", content_length, "\n")
