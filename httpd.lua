@@ -135,28 +135,53 @@ local function write_fields(output, fields, cookies)
 end
 
 
--- expects lowercase name
-local function find_field(fields, search_name)
-   for name, field in pairs(fields or {}) do
-      if name:lower() == search_name then
-         return name, field
-      end
-   end
-end
-
-
-local function field_contains_value(field, search_value)
-   if field == search_value then
-      return true
-   elseif type(field) == "table" then
+local response_field_methods = {
+   contains_value = function(field, search_value)
       for _, value in ipairs(field) do
          -- XXX: doesn't handle params. parse response fields?
          if value == search_value then
             return true
          end
       end
-   end
-   return false
+      return false
+   end,
+}
+
+
+local response_field_metatable = {__index=response_field_methods}
+
+
+-- Add some convenience metamethods to a collection of response fields.
+local function wrap_response_fields(fields)
+   -- Return a proxy that provides case-insensitive lookup and proxies fields.
+   return setmetatable({}, {
+      -- case-insensitive field-name lookup
+      __index = function(_, key)
+         local lkey = key:lower()
+         for name, field in pairs(fields) do
+            if name:lower() == lkey then
+               -- Normalize singleton fields into lists.
+               if type(field) ~= "table" then
+                  field = {field}
+                  fields[name] = field
+               end
+               -- Add some convenience methods to the field, and return its
+               -- original name.
+               return setmetatable(field, response_field_metatable), name
+            end
+         end
+      end,
+
+      -- case-insensitive field assignment
+      __newindex = function(self, name, value)
+         local _, real_name = self[name]
+         fields[real_name or name] = value
+      end,
+
+      __pairs = function()
+         return pairs(fields)
+      end,
+   })
 end
 
 
@@ -169,35 +194,31 @@ local function write_http_response(server, response)
 
    local status = response.status
    local reason = response.reason
-   local headers = response.headers or {}
+   local headers = response.headers
    local cookies = response.cookies
    local body = response.body
 
    -- MUST generate a Date header field in certain cases (RFC 9110 §6.6.1)
    -- Doesn't hurt to always send one.
-   if not find_field(headers, "date") then
+   if not headers["Date"] then
       headers["Date"] = os.date("!%a, %d %b %Y %H:%M:%S GMT")
    end
 
    if type(body) == "string" then
-      local field_name = find_field(headers, "content-length")
-      headers[field_name or "Content-Length"] = #body
+      -- Ensure the correct Content-Length is sent.
+      headers["Content-Length"] = #body
    elseif type(body) == "function" then
       -- Send "Connection: close" when trying to send a body with unknown length
       -- and not using chunked transfer encoding.  Take care not to interfere
       -- with connection upgrades.
-      if not find_field(headers, "content-length") then
-         local _, te = find_field(headers, "transfer-encoding")
-         if not field_contains_value(te, "chunked") then
-            local field_name, connection = find_field(headers, "connection")
+      if not headers["Content-Length"] then
+         local xfer_enc = headers["Transfer-Encoding"]
+         if not xfer_enc or not xfer_enc:contains_value("chunked") then
+            local connection = headers["Connection"]
             if connection then
-               if not field_contains_value(connection, "close") and
-                  not field_contains_value(connection, "Upgrade") then
-                  if type(connection) == "table" then
-                     table.insert(connection, "close")
-                  else
-                     headers[field_name] = {connection, "close"}
-                  end
+               if not connection:contains_value("Upgrade") and
+                  not connection:contains_value("close") then
+                  table.insert(connection, "close")
                end
             else
                headers["Connection"] = "close"
@@ -293,13 +314,14 @@ local function handle_request(server)
    end
 
    ::respond::
+   response.headers = wrap_response_fields(response.headers or {})
    write_http_response(server, response)
 
    -- HTTP/1.1 connections are keep-alive by default.
    local req_connection = request.headers["connection"]
    local req_close = req_connection and req_connection:contains_value("close")
-   local _, res_connection = find_field(response.headers, "connection")
-   local res_close = field_contains_value(res_connection, "close")
+   local res_connection = response.headers["Connection"]
+   local res_close = res_connection and res_connection:contains_value("close")
    if req_close or res_close then
       close_connection(server)
       -- TODO: Accommodate a persistent server with an accept loop.  For now, we
