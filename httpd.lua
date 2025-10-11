@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.5.1"
+M.VERSION = "0.6.0"
 
 
 -- HTTP-message = start-line
@@ -241,6 +241,18 @@ end
 ]]--
 
 
+local function close_connection(server)
+   if server.input == io.stdin or server.output == io.stdout then
+      -- We can't close stdin or stdout, we have to exit.
+      os.exit()
+   end
+   server.input:close()
+   if server.output ~= server.input then
+      server.output:close()
+   end
+end
+
+
 local function handle_request(server)
    local request = server.request
    local handlers = server.handlers[request.method]
@@ -269,19 +281,23 @@ local function handle_request(server)
    ::respond::
    write_http_response(server, response)
 
-   -- Close input and output file handles to complete the response.
-   -- TODO: pipelining
-   if server.input == io.stdin or server.output == io.stdout then
-      -- We can't close stdin or stdout, we have to exit.
-      os.exit()
+   -- HTTP/1.1 connections are keep-alive by default.
+   local req_connection = request.headers["connection"]
+   local req_close = req_connection and req_connection:contains_value("close")
+   local res_connection = response.headers and response.headers["Connection"] or
+      response.headers["connection"]
+   local res_close = header_contains_value(res_connection, "close")
+   if req_close or res_close then
+      close_connection(server)
+      -- TODO: Accommodate a persistent server with an accept loop.  For now, we
+      -- must trash the server after closing the connection.
+      if server.log ~= io.stderr then
+         server.log:close()
+      end
+   else
+      server.output:flush()
    end
-   -- TODO: Accommodate a persistent server with an accept loop.  For now, we
-   -- must trash the server after every request/response.
-   server.input:close()
-   if server.output ~= server.input then
-      server.output:close()
-   end
-   server.log:close()
+   return ServerState.START_LINE
 end
 
 
@@ -1147,7 +1163,6 @@ local function handle_chunked_message_body(server)
          return chunk, exts_dict, exts_str
       end
    end
-   handle_request(server)
 end
 
 
@@ -1168,7 +1183,6 @@ local function handle_message_body(server, content_length)
       server.log:write(body, "\n")
    end
    server.request.body = body
-   handle_request(server)
 end
 
 
@@ -1179,7 +1193,7 @@ local function handle_blank_line(server)
 
    if transfer_encoding_header then
       if transfer_encoding_header:concat() == "chunked" then
-         return handle_chunked_message_body(server)
+         handle_chunked_message_body(server)
       else
          server.log:write("unsupported transfer-encoding\n")
       end
@@ -1188,7 +1202,7 @@ local function handle_blank_line(server)
       local elements = content_length_header.elements
       local content_length = tonumber(elements[#elements].value)
       if content_length then
-         return handle_message_body(server, content_length)
+         handle_message_body(server, content_length)
       else
          server.log:write("invalid content-length\n")
       end
