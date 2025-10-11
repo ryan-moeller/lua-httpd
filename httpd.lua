@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.5.0"
+M.VERSION = "0.5.1"
 
 
 -- HTTP-message = start-line
@@ -1115,7 +1115,6 @@ local function handle_chunked_message_body(server)
          return chunk, exts_dict, exts_str
       end
    end
-   handle_request(server)
 end
 
 
@@ -1123,12 +1122,11 @@ local function handle_message_body(server, content_length)
    local body = ""
    repeat
       local buf = server.input:read(content_length - #body)
-      if buf then
-         body = body .. buf
-      else
+      if not buf or #buf == 0 then
          server.log:write("body shorter than specified content length\n")
          break
       end
+      body = body .. buf
    until #body == content_length
 
    if server.verbose then
@@ -1136,7 +1134,28 @@ local function handle_message_body(server, content_length)
       server.log:write(body, "\n")
    end
    server.request.body = body
-   handle_request(server)
+end
+
+
+local function handle_boundless_message_body(server)
+   if server.verbose then
+      server.log:write("body is boundless\n")
+   end
+   -- For a boundless transfer, the body field of the request object will be a
+   -- function returning an iterator over buffered content, used like:
+   -- for buffer in request.body() do
+   --     -- do things
+   -- end
+   -- This enables streaming content without having to fully buffer it.
+   server.request.body = function()
+      return function()
+         local buf = server.input:read(server.buffer_size)
+         if not buf or #buf == 0 then
+            return nil
+         end
+         return buf
+      end
+   end
 end
 
 
@@ -1144,10 +1163,11 @@ local function handle_blank_line(server)
    local request = server.request
    local transfer_encoding_header = request.headers["transfer-encoding"]
    local content_length_header = request.headers["content-length"]
+   local connection_header = request.headers["connection"]
 
    if transfer_encoding_header then
       if transfer_encoding_header:concat() == "chunked" then
-         return handle_chunked_message_body(server)
+         handle_chunked_message_body(server)
       else
          server.log:write("unsupported transfer-encoding\n")
       end
@@ -1156,10 +1176,12 @@ local function handle_blank_line(server)
       local elements = content_length_header.elements
       local content_length = tonumber(elements[#elements].value)
       if content_length then
-         return handle_message_body(server, content_length)
+         handle_message_body(server, content_length)
       else
          server.log:write("invalid content-length\n")
       end
+   elseif connection_header and connection_header:contains_value("close") then
+      handle_boundless_message_body(server)
    end
    return handle_request(server)
 end
@@ -1283,6 +1305,7 @@ local function handle_request_line(server, line)
 end
 
 
+M.default_buffer_size =    16 << 10 -- 16 KiB should be enough for anyone.
 M.default_max_chunk_size = 16 << 20 -- 16 MiB should be enough for anyone.
 
 
@@ -1292,6 +1315,7 @@ function M.create_server(logfile, input, output)
       log = logfile and io.open(logfile, "a") or io.stderr,
       input = input or io.stdin,
       output = output or io.stdout,
+      buffer_size = M.default_buffer_size,
       max_chunk_size = M.default_max_chunk_size,
       -- handlers is a map of method => { location, location, ... }
       -- locations are matched in the order given, first match wins
