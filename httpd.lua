@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.6.2"
+M.VERSION = "0.7.0"
 
 
 -- HTTP-message = start-line
@@ -204,16 +204,15 @@ local function write_http_response(server, response)
       headers["Date"] = os.date("!%a, %d %b %Y %H:%M:%S GMT")
    end
 
-   if not body then
-      headers["Content-Length"] = 0
-   elseif type(body) == "string" then
-      -- Ensure the correct Content-Length is sent.
-      headers["Content-Length"] = #body
-   elseif type(body) == "function" then
-      -- Send "Connection: close" when trying to send a body with unknown length
-      -- and not using chunked transfer encoding.  Take care not to interfere
-      -- with connection upgrades.
-      if not headers["Content-Length"] then
+   if not headers["Content-Length"] then
+      if not body then
+         headers["Content-Length"] = 0
+      elseif type(body) == "string" then
+         headers["Content-Length"] = #body
+      elseif type(body) == "function" then
+         -- Send "Connection: close" when trying to send a body with unknown
+         -- length and not using chunked transfer encoding.  Take care not to
+         -- interfere with connection upgrades.
          local xfer_enc = headers["Transfer-Encoding"]
          if not xfer_enc or not xfer_enc:contains_value("chunked") then
             local connection = headers["Connection"]
@@ -234,11 +233,14 @@ local function write_http_response(server, response)
 
    write_fields(output, headers, cookies)
 
-   if type(body) == "string" then
-      output:write(body)
-   elseif type(body) == "function" then
-      output:flush()
-      body(output)
+   -- MUST NOT send content in the response to HEAD (RFC 9110 §9.3.2)
+   if server.request.method ~= "HEAD" then
+      if type(body) == "string" then
+         output:write(body)
+      elseif type(body) == "function" then
+         output:flush()
+         body(output)
+      end
    end
 end
 
