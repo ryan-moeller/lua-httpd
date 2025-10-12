@@ -328,6 +328,6 @@ end)
 server:add_route("POST", "^/install$", function(request)
     return { status=501, reason="Not implemented", body="TODO" }
 end)
-server:run(true)
+server:run(httpd.INFO)
 
 -- vim: set et sw=4:

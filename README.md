@@ -63,7 +63,7 @@ local server = httpd.create_server("/var/log/httpd.log")
 server:add_route("GET", "^/$", function(request)
     return { status=200, reason="ok", body="hello, world!" }
 end)
-server:run(true)
+server:run(httpd.INFO)
 ```
 
 On FreeBSD, use the shebang `#!/usr/libexec/flua` to invoke the base system's
@@ -109,7 +109,7 @@ local server = httpd.create_server()
 server:add_route("GET", "^/", function(request)
     return { status=200, reason="ok", body="hello, world!" }
 end)
-server:run(true)
+server:run(httpd.INFO)
 ```
 
 Start listening for connections to the server:
@@ -238,14 +238,13 @@ systemctl start server.socket
 
 ### API
 
-#### `httpd.create_server([logfile[, input[, output]]]) → server`
+#### `httpd.create_server([log[, input[, output]]]) → server`
 
 Create a new HTTP server instance.
 
-* `logfile`: Optional path to a file where logs will be written.
-  `io.stderr` by default.
-* `input`: Optional input file handle.  `io.stdin` by default.
-* `output`: Optional output file handle.  `io.stdout` by default.
+* `log`: Optional log path or file-like object.  `io.stderr` by default.
+* `input`: Optional input file-like object.  `io.stdin` by default.
+* `output`: Optional output file-like object.  `io.stdout` by default.
 * Returns a `server` object.
 
 #### `server:add_route(method, pattern, handler)`
@@ -256,11 +255,62 @@ Register a handler for a given HTTP method and Lua pattern.
 * `pattern`: Lua string pattern matched against the request path
 * `handler`: Function called as `handler(request)` returning a response table
 
-#### `server:run([verbose])`
+#### `server:run([log_level])`
 
-Run the server. Reads lines from `stdin` and dispatches requests.
+Run the server.  Reads lines from `server.input` and dispatches requests to
+handlers, writing responses to `server.output`.
 
-* `verbose`: If true, logs each input line to the log file.
+* `log_level`: Set log output level and verbosity.
+
+If `log_level` is `true`, the currently set `server.log.level` is used, and
+additional logging is enabled.  If a number, sets `server.log.level`:
+
+| Level | Name          |
+| ----- | ------------- |
+| 1     | `httpd.FATAL` |
+| 2     | `httpd.ERROR` |
+| 3     | `httpd.WARN`  |
+| 4     | `httpd.INFO`  |
+| 5     | `httpd.DEBUG` |
+| 6     | `httpd.TRACE` |
+
+Setting `log_level` greater than `httpd.WARN` also enables additional log
+messages.
+
+Passing `log_level` as `nil` or `false` and setting `server.log.level` greater
+than `httpd.WARN` is a valid configuration available for advanced control over
+logging.
+
+### Server Object
+
+The server object has one field of interest: `server.log`.  The log object is a
+wrapper around the `log` parameter to `httpd.create_server` (or `io.stderr`)
+with the methods for writing lines to the log:
+
+* `:fatal`
+* `:error`
+* `:warn`
+* `:info`
+* `:debug`
+* `:trace`
+
+Each method takes any number of parameters.  If `server.log.level` is at least
+as severe, it converts the parameters to strings with `tostring`, concatenates
+them with `table.concat`, and writes a line to the log file.  Each line begins
+with a timestamp, process identifier, and log level, followed by the joined
+parameters, and ending with a newline.
+
+For example:
+
+```lua
+log:trace("number=", 13)
+```
+
+writes something like
+
+```
+2025-10-12T15:42:05Z 16811 TRACE: number=13
+```
 
 ### Request Object
 
@@ -277,6 +327,7 @@ Handler functions receive a `request` table with the following fields:
 | `cookies`  | table              | Request cookies set by `Cookie` header    |
 | `body`     | string or function | Request body or chunk stream (if present) |
 | `matches`  | table              | Captures or match from route Lua pattern  |
+| `server`   | table              | Reference to the server object            |
 
 ### Request Headers and Trailers
 
@@ -406,7 +457,7 @@ These functions are also available from the module:
 I didn't feel like cross-compiling a bunch of stuff for a MIPS router.
 It had a Lua interpreter on it, and I like Lua, so I wrote this.
 
-## Error Logging
+## Error Logging under Inetd
 
 Inetd populates stdin, stdout, and stderr descriptors with the socket.  This is
 not ideal for error logging, since errors will be sent to the client and break
@@ -426,5 +477,8 @@ end
 
 Placing the above early in your server script will ensure errors are logged to
 a file on the server instead of confusing the client.
+
+This is for capturing Lua errors specifically, not error level messages to the
+server log.  The server log and stderr may be directed to the same file, or not.
 
 [1]: https://github.com/ryan-moeller/flualibs

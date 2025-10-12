@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.7.0"
+M.VERSION = "0.8.0"
 
 
 -- HTTP-message = start-line
@@ -92,7 +92,7 @@ local function handle_start_line(server, line)
    local method, rawpath, version = line:match("^(%g+) (%g+) (HTTP/1.1)\r$")
    if not method then
       -- No match.  We'll just log the oddity and try the next line.
-      server.log:write("Invalid start-line in request.\n")
+      server.log:warn("invalid start-line in request")
       return ServerState.START_LINE
    end
    local path, params = parse_request_path(rawpath)
@@ -245,39 +245,25 @@ local function write_http_response(server, response)
 end
 
 
---[[
--- Log some debugging info
+-- Log some debugging info.
 local function debug_server(server)
    local log = server.log
    local request = server.request
    local handlers = server.handlers[request.method]
 
-   log:write("#server.handlers = " .. tostring(#server.handlers) .. "\n")
-   log:write("#handlers = " .. tostring(#handlers) .. "\n")
-   log:write(request.method .. "\n")
+   log:debug(request.method)
+   log:debug("#handlers = ", tostring(#handlers))
    if request.path ~= nil then
-      log:write(request.path, "\n")
-   end
-   for k, v in pairs(request.headers) do
-      log:write("> " .. k .. ": ")
-      for k1, v1 in pairs(v) do
-         log:write(k1, "->")
-         for _, v2 in ipairs(v1) do
-            log:write(v2 .. ", ")
-         end
-         log:write("; ")
-      end
-      log:write("\n")
+      log:debug(request.path)
    end
    for k, v in pairs(request.params) do
-      log:write(k .. " = ")
-      for _, v in ipairs(v) do
-         log:write(v .. ", ")
-      end
-      log:write("\n")
+      local values = type(v) == "table" and v or {v}
+      log:debug(">P ", k, " = ", table.concat(v, ", "))
+   end
+   for k, v in pairs(request.headers) do
+      log:debug(">H ", k, " -> ", table.concat(v.unvalidated, ", "))
    end
 end
-]]--
 
 
 local function close_connection(server)
@@ -297,7 +283,9 @@ local function handle_request(server)
    local handlers = server.handlers[request.method]
    local response
 
-   --debug_server(server)
+   if server.verbose and server.log.level >= M.DEBUG then
+      debug_server(server)
+   end
 
    -- Check if we implement this method.
    if not handlers then
@@ -318,6 +306,8 @@ local function handle_request(server)
    end
 
    ::respond::
+   server.log:info(request.method, " ", request.path, " ", response.status, " ",
+      response.reason)
    response.headers = wrap_response_fields(response.headers or {})
    write_http_response(server, response)
 
@@ -1119,7 +1109,7 @@ local function handle_trailer_field(server, line)
          -- We'll just throw them in with the trailers instead.
          update_fields(server.request.trailers, name, value)
       else
-         server.log:write("Ignoring invalid trailer: ", line, "\n")
+         server.log:warn("ignoring invalid trailer: ", line)
       end
 
       -- Look for more trailers.
@@ -1130,7 +1120,7 @@ end
 
 local function handle_chunked_message_body(server)
    if server.verbose then
-      server.log:write("body is chunked\n")
+      server.log:info("body is chunked")
    end
    -- For a chunked transfer, the body field of the request object will be a
    -- function returning an iterator over the chunks, used like:
@@ -1142,24 +1132,24 @@ local function handle_chunked_message_body(server)
       return function()
          local chunk_size_line = server.input:read("*l")
          if not chunk_size_line then
-            server.log:write("unexpected EOF\n")
+            server.log:error("unexpected EOF")
             return
          end
          local chunk_size_hex, exts_str = chunk_size_line:match("^(%x+)(.*)\r$")
          if not chunk_size_hex then
-            server.log:write("invalid chunk size\n")
+            server.log:error("invalid chunk size")
             return
          end
          local chunk_size = tonumber(chunk_size_hex, 16)
          if not chunk_size or chunk_size > server.max_chunk_size then
-            server.log:write("invalid chunk size\n")
+            server.log:error("invalid chunk size")
             -- TODO: There are a ton of these error conditions that should
             -- send a response before aborting.  Like 413 Payload Too Large...
             return
          end
          if server.verbose then
-            server.log:write("chunk size = ", chunk_size, "\n")
-            server.log:write("chunk extensions = ", exts_str, "\n")
+            server.log:debug("chunk size = ", chunk_size)
+            server.log:debug("chunk extensions = ", exts_str)
          end
          if chunk_size == 0 then
             -- This is the end of the body.  Now read any trailer fields before
@@ -1175,9 +1165,9 @@ local function handle_chunked_message_body(server)
          end
          local chunk = ""
          repeat
-            local buf = server.input:read(chunk_size - #chunk)
+            local buf, err = server.input:read(chunk_size - #chunk)
             if not buf or #buf == 0 then
-               server.log:write("error reading body chunk\n")
+               server.log:error("reading body chunk failed: ", err or "EOF")
                return
             end
             chunk = chunk .. buf
@@ -1185,7 +1175,7 @@ local function handle_chunked_message_body(server)
          until #chunk == chunk_size
          local crlf = server.input:read(2)
          if crlf ~= "\r\n" then
-            server.log:write("invalid chunk-data terminator\n")
+            server.log:error("invalid chunk-data terminator")
             return
          end
          -- It is technically allowed for extension names to be repeated, so
@@ -1209,15 +1199,19 @@ local function handle_message_body(server, content_length)
    while #body < content_length do
       local buf = server.input:read(content_length - #body)
       if not buf or #buf == 0 then
-         server.log:write("body shorter than specified content length\n")
+         server.log:warn("body shorter than specified content length")
          break
       end
       body = body .. buf
    end
 
    if server.verbose then
-      server.log:write("content length = ", content_length, "\n")
-      server.log:write(body, "\n")
+      server.log:debug("content length = ", content_length)
+      if server.log.level >= M.TRACE then
+         for line in body:gmatch("[^\r\n]+") do
+            server.log:trace(">B ", line)
+         end
+      end
    end
    server.request.body = body
 end
@@ -1232,7 +1226,7 @@ local function handle_blank_line(server)
       if transfer_encoding_header:concat() == "chunked" then
          handle_chunked_message_body(server)
       else
-         server.log:write("unsupported transfer-encoding\n")
+         server.log:error("unsupported transfer-encoding")
       end
    elseif content_length_header then
       -- Be lenient and only use the last received content-length header value.
@@ -1241,7 +1235,7 @@ local function handle_blank_line(server)
       if content_length then
          handle_message_body(server, content_length)
       else
-         server.log:write("invalid content-length\n")
+         server.log:error("invalid content-length")
       end
    end
    return handle_request(server)
@@ -1296,7 +1290,7 @@ local function set_cookies(server, cookie)
    valid = tail == ""
    ::check_valid::
    if not valid then
-      server.log:write("Ignoring invalid Cookie header\n")
+      server.log:warn("ignoring invalid Cookie header")
       return
    end
    server.cookies = cookies
@@ -1341,7 +1335,7 @@ local function handle_header_field(server, line)
             update_fields(server.request.headers, lname, value)
          end
       else
-         server.log:write("Ignoring invalid header: ", line, "\n")
+         server.log:warn("ignoring invalid header: ", line)
       end
 
       -- Look for more headers.
@@ -1366,13 +1360,64 @@ local function handle_request_line(server, line)
 end
 
 
+-- Define the set of log levels.
+local log_levels = {"FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"}
+for i, level in ipairs(log_levels) do
+   M[level] = i
+end
+
+
+-- Wrap a log file to add convenience methods.
+local function logger(log)
+   local log = type(log) == "string" and io.open(log, "a") or log
+   if log.setvbuf then
+      log:setvbuf("no")
+   end
+   local pid = (function()
+      local f = assert(io.popen("echo $PPID"))
+      local pid = f:read("*l")
+      f:close()
+      return pid
+   end)()
+   local timestamp = ""
+   local time = 0
+   local function write(level, ...)
+      local now = os.time()
+      if time ~= now then
+         timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ", now)
+         time = now
+      end
+      local values = {...}
+      for i, value in ipairs(values) do
+         values[i] = tostring(value)
+      end
+      local msg = table.concat(values)
+      return log:write(("%s %s %s: %s\n"):format(timestamp, pid, level, msg))
+   end
+   local methods = {}
+   function methods.close()
+      if log.close then
+         return log:close()
+      end
+   end
+   for i, level in ipairs(log_levels) do
+      methods[level:lower()] = function(self, ...)
+         if self.level >= i then
+            return write(level, ...)
+         end
+      end
+   end
+   return setmetatable({level=M.FATAL}, {__index=methods})
+end
+
+
 M.default_max_chunk_size = 16 << 20 -- 16 MiB should be enough for anyone.
 
 
-function M.create_server(logfile, input, output)
+function M.create_server(log, input, output)
    local server = {
       state = ServerState.START_LINE,
-      log = logfile and io.open(logfile, "a") or io.stderr,
+      log = logger(log or io.stderr),
       input = input or io.stdin,
       output = output or io.stdout,
       max_chunk_size = M.default_max_chunk_size,
@@ -1384,20 +1429,24 @@ function M.create_server(logfile, input, output)
       handlers = {},
    }
 
-   -- TODO: make log readable with concurrent connections
-   server.log:setvbuf("no")
-
    function server:add_route(method, pattern, handler)
       local handlers = self.handlers[method] or {}
       table.insert(handlers, { pattern, handler })
       self.handlers[method] = handlers
    end
 
-   function server:run(verbose)
-      self.verbose = verbose
+   function server:run(log_level)
+      if type(log_level) == "number" then
+         self.log.level = log_level
+         if log_level > M.WARN then
+            self.verbose = true
+         end
+      else
+         self.verbose = log_level == true
+      end
       for line in self.input:lines() do
-         if verbose then
-            self.log:write(line, "\n")
+         if self.verbose then
+            self.log:trace(">C ", line)
          end
          self.state = handle_request_line(self, line)
       end

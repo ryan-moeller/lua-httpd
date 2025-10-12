@@ -105,6 +105,6 @@ end
 
 local server = httpd.create_server("/var/log/mon.log")
 server:add_route("GET", "^/$", monitor)
-server:run(true)
+server:run(httpd.INFO)
 
 -- vim: set et sw=4:

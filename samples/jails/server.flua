@@ -605,6 +605,6 @@ end
 local server = httpd.create_server("/var/log/jails.log")
 server:add_route("GET", "^/$", make_handler(main_contents))
 server:add_route("POST", "^/create$", make_handler(create_contents))
-server:run(true)
+server:run(httpd.INFO)
 
 -- vim: set et sw=4:

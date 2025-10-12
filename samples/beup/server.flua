@@ -218,47 +218,47 @@ end)
 server:add_route("POST", "^/update$", function(request)
     -- FIXME: this whole function is nasty ;)
     local log = request.server.log
-    log:write("checking request validity\n")
+    log:trace("checking request validity")
     local content_type = request.headers["content-type"]
     if not content_type or not content_type:contains_value("application/x-www-form-urlencoded") then
-        log:write("request with invalid form content-type\n")
+        log:info("request with invalid form content-type")
         return { status=415, reason="unsupported media type",
                  body="This form must be submitted as application/x-www-form-urlencoded data." }
     end
     -- Check BUILDDATE and REVISION again as a protection against stale form submissions.
-    log:write("parsing request body\n")
+    log:trace("parsing request body")
     local form = httpd.parse_query_string(request.body)
     local wanted = table.concat(form.latest)
-    log:write("fetching patest snapshot meta\n")
+    log:trace("fetching patest snapshot meta")
     local latest = fetch_snapshot_meta("BUILDDATE").."-"..fetch_snapshot_meta("REVISION")
     if wanted ~= latest then
-        log:write("request for unavailable snapshot build\n")
+        log:info("request for unavailable snapshot build")
         return { status=404, reason="not found",
                  body="The requested snapshot build was not found on the server." }
     end
     local archives = basedir.."/"..latest
-    log:write("mkdir("..archives..")\n")
+    log:trace("mkdir("..archives..")")
     if not lfs.mkdir(archives) then
         local attrs = assert(lfs.attributes(archives))
         assert(attrs.mode == "directory")
     end
-    log:write("feching archives (serially)\n")
+    log:trace("feching archives (serially)")
     for _, f in ipairs(distributions) do
         local path = archives.."/"..f
         local url = snapshots_site.."/"..f
         -- TODO: fire off a background task, show progress to user
         assert(os.execute("fetch -qmo "..path.." "..url))
     end
-    log:write("creating be\n")
+    log:trace("creating be")
     be_create(latest)
-    log:write("mounting be\n")
+    log:trace("mounting be")
     local mountpoint = be_mount(latest)
-    log:write("mounted at "..mountpoint.."\n")
-    log:write("setting filesystem flags\n")
+    log:debug("mounted at "..mountpoint)
+    log:trace("setting filesystem flags")
     assert(os.execute("chflags -R noschg "..mountpoint))
-    log:write("extracting archives:")
+    log:trace("extracting archives:")
     for _, f in ipairs(distributions) do
-        log:write(" "..f)
+        log:trace("\t", f)
         if f == "src.txz" then
             -- TODO: preserve local changes in /usr/src
             assert(os.execute("rm -rf /usr/src/*"))
@@ -268,24 +268,22 @@ server:add_route("POST", "^/update$", function(request)
             assert(os.execute("tar -xf "..archives.."/"..f.." -C "..mountpoint))
         end
     end
-    log:write("\n")
-    log:write("copying system config files:")
+    log:trace("copying system config files:")
     for _, f in ipairs({"passwd", "group", "master.passwd", "services", "inetd.conf"}) do
-        log:write(" "..f)
+        log:trace("\t", f)
         -- cat to preserve metadata (etcupdate does it this way)
         assert(os.execute("cat /etc/"..f.." >"..mountpoint.."/etc/"..f))
     end
-    log:write("\n")
-    log:write("regenerating system databases\n")
+    log:trace("regenerating system databases")
     assert(os.execute("pwd_mkdb -d "..mountpoint.."/etc -p "..mountpoint.."/etc/master.passwd"))
     assert(os.execute("services_mkdb -q -o "..mountpoint.."/var/db/services.db "..mountpoint.."/etc/services"))
     -- TODO: any other files that are overwritten by the archive extraction and need preservation,
     -- proper 3-way merge like etcupdate...
-    log:write("unmounting be\n")
+    log:trace("unmounting be")
     be_umount(latest)
-    log:write("activating be\n")
+    log:trace("activating be")
     be_activate(latest)
-    log:write("sending HTTP 201 response\n")
+    log:trace("sending HTTP 201 response")
     local body = template.process([[
 <!DOCTYPE html>
 <html>
@@ -316,6 +314,6 @@ server:add_route("POST", "^/update$", function(request)
     })
     return { status=201, reason="created", body=body }
 end)
-server:run(true)
+server:run(httpd.INFO)
 
 -- vim: set et sw=4:

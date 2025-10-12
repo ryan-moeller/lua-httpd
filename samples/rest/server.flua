@@ -55,13 +55,13 @@ local server = httpd.create_server(server_log_path)
 
 local db, err, msg = sqlite.open(demo_db_path)
 if not db then
-  server.log:write("Error opening database: ", msg, "\n")
+  server.log:error("Error opening database: ", msg)
   os.exit(1)
 end
 if db:exec(
      "CREATE TABLE IF NOT EXISTS numbers(num INTEGER PRIMARY KEY)"
        ) ~= sqlite.OK then
-  server.log:write("Error initializing database: ", db:errmsg(), "\n")
+  server.log:error("Error initializing database: ", db:errmsg())
   os.exit(1)
 end
 
@@ -120,7 +120,7 @@ function numbers_add(request)
     return BAD_REQUEST
   end
   if stmt:bind_values(num) ~= sqlite.OK then
-    server.log:write("Error binding parameter: ", db:errmsg(), "\n")
+    server.log:error("Error binding parameter: ", db:errmsg())
     return INTERNAL_SERVER_ERROR
   end
   local res = stmt:step()
@@ -133,7 +133,7 @@ function numbers_add(request)
   elseif res == sqlite.CONSTRAINT and string.find(db:errmsg(), "UNIQUE") then
     return CONFLICT
   else
-    server.log:write("Error executing statement: ", db:errmsg(), "\n")
+    server.log:error("Error executing statement: ", db:errmsg())
     return INTERNAL_SERVER_ERROR
   end
 end
@@ -142,7 +142,7 @@ function numbers_get(request)
   local stmt = db:prepare("SELECT * FROM numbers WHERE num = ?")
   local num = tonumber(request.matches[1])
   if stmt:bind_values(num) ~= sqlite.OK then
-    server.log:write("Error binding parameter: ", db:errmsg(), "\n")
+    server.log:error("Error binding parameter: ", db:errmsg())
     return INTERNAL_SERVER_ERROR
   end
   if stmt:step() == sqlite.ROW then
@@ -160,11 +160,11 @@ function numbers_delete(request)
   local stmt = db:prepare("DELETE FROM numbers WHERE num = ?")
   local num = tonumber(request.matches[1])
   if stmt:bind_values(num) ~= sqlite.OK then
-    server.log:write("Error binding parameter: ", db:errmsg(), "\n")
+    server.log:error("Error binding parameter: ", db:errmsg())
     return INTERNAL_SERVER_ERROR
   end
   if stmt:step() ~= sqlite.DONE then
-    server.log:write("Error executing statement: ", db:errmsg(), "\n")
+    server.log:error("Error executing statement: ", db:errmsg())
     return INTERNAL_SERVER_ERROR
   end
   return NO_CONTENT
@@ -218,6 +218,6 @@ for _,m in ipairs({
   server:add_route(m, ".*", not_found)
 end
 
-server:run(true)
+server:run(httpd.DEBUG)
 
 -- vim: set et sw=2:
