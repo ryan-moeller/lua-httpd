@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.9.0"
+M.VERSION = "0.10.0"
 
 
 -- HTTP-message = start-line
@@ -23,6 +23,8 @@ local ServerState = {
    START_LINE = 0,
    HEADER_FIELD = 1,
    TRAILER_FIELD = 2,
+   RESPONSE = 3,
+   CLOSED = -1, -- except here; we're already closed
 }
 
 
@@ -187,7 +189,7 @@ end
 
 -- expects a server table and a response table
 -- example response table:
--- { status=404, reason="not found", headers={}, cookies={},
+-- { status=404, reason="Not Found", headers={}, cookies={},
 --   body="404 Not Found" }
 local function write_http_response(server, response)
    local output = server.output
@@ -234,14 +236,66 @@ local function write_http_response(server, response)
    write_fields(output, headers, cookies)
 
    -- MUST NOT send content in the response to HEAD (RFC 9110 §9.3.2)
-   if server.request.method ~= "HEAD" then
-      if type(body) == "string" then
-         output:write(body)
-      elseif type(body) == "function" then
-         output:flush()
-         body(output)
+   -- Also described in RFC 9112 §6.3 (rule 1).
+   if server.request.method == "HEAD" then
+      return
+   end
+   -- Not Modified or No Content or Informational responses end after headers.
+   -- RFC 9112 §6.3 (rule 1)
+   if response.status == 304 or response.status == 204 or
+      (response.status >= 100 and response.status <= 199) then
+      -- But when Switching Protocols, a response.body function may be used to
+      -- handle the new protocol.
+      if response.status ~= 101 or type(body) ~= "function" then
+         return
       end
    end
+   if type(body) == "string" then
+      output:write(body)
+   elseif type(body) == "function" then
+      output:flush()
+      body(output)
+   end
+end
+
+
+local function close_connection(server)
+   if server.input == io.stdin or server.output == io.stdout then
+      -- We can't close stdin or stdout, we have to exit.
+      os.exit()
+   end
+   server.input:close()
+   if server.output ~= server.input then
+      server.output:close()
+   end
+end
+
+
+local function respond(server, response)
+   local request = server.request
+
+   server.log:info(request.method, " ", request.path, " ", response.status, " ",
+      response.reason)
+   response.headers = wrap_response_fields(response.headers or {})
+   write_http_response(server, response)
+
+   -- HTTP/1.1 connections are keep-alive by default.
+   local req_connection = request.headers["connection"]
+   local req_close = req_connection and req_connection:contains_value("close")
+   local res_connection = response.headers["Connection"]
+   local res_close = res_connection and res_connection:contains_value("close")
+   if req_close or res_close then
+      close_connection(server)
+      -- TODO: Accommodate a persistent server with an accept loop.  For now, we
+      -- must trash the server after closing the connection.
+      if server.log ~= io.stderr then
+         server.log:close()
+      end
+      return ServerState.CLOSED
+   else
+      server.output:flush()
+   end
+   return ServerState.START_LINE
 end
 
 
@@ -266,22 +320,9 @@ local function debug_server(server)
 end
 
 
-local function close_connection(server)
-   if server.input == io.stdin or server.output == io.stdout then
-      -- We can't close stdin or stdout, we have to exit.
-      os.exit()
-   end
-   server.input:close()
-   if server.output ~= server.input then
-      server.output:close()
-   end
-end
-
-
 local function handle_request(server)
    local request = server.request
    local handlers = server.handlers[request.method]
-   local response
 
    if server.log.level >= M.DEBUG then
       debug_server(server)
@@ -289,45 +330,27 @@ local function handle_request(server)
 
    -- Check if we implement this method.
    if not handlers then
-      response = { status=501, reason="Not Implemented", body="not implemented" }
-      goto respond
+      return respond(server, {
+         status=501, reason="Not Implemented", body="not implemented",
+      })
    end
 
    -- Try to find a location matching the request.
-   response = { status=404, reason="Not Found", body="not found" }
    for _, location in ipairs(handlers) do
       local pattern, handler = table.unpack(location)
       local matches = { string.match(request.path, pattern) }
       if #matches > 0 then
          request.matches = matches
-         response = handler(request)
-         break
+         server.state = ServerState.RESPONSE
+         local response = handler(request)
+         if server.state ~= ServerState.RESPONSE then
+            -- An error occurred in the handler.
+            return server.state
+         end
+         return respond(server, response)
       end
    end
-
-   -- TODO: move this to a separate function that can be reused for errors
-   ::respond::
-   server.log:info(request.method, " ", request.path, " ", response.status, " ",
-      response.reason)
-   response.headers = wrap_response_fields(response.headers or {})
-   write_http_response(server, response)
-
-   -- HTTP/1.1 connections are keep-alive by default.
-   local req_connection = request.headers["connection"]
-   local req_close = req_connection and req_connection:contains_value("close")
-   local res_connection = response.headers["Connection"]
-   local res_close = res_connection and res_connection:contains_value("close")
-   if req_close or res_close then
-      close_connection(server)
-      -- TODO: Accommodate a persistent server with an accept loop.  For now, we
-      -- must trash the server after closing the connection.
-      if server.log ~= io.stderr then
-         server.log:close()
-      end
-   else
-      server.output:flush()
-   end
-   return ServerState.START_LINE
+   return respond(server, {status=404, reason="Not Found", body="not found"})
 end
 
 
@@ -1099,7 +1122,7 @@ local function handle_trailer_field(server, line)
    if line == "\r" then
       -- When there are no trailers left we get just a blank line.
       -- That marks the end of this request.
-      return ServerState.START_LINE
+      return ServerState.RESPONSE
    else
       local name, value = parse_field(line)
 
@@ -1129,21 +1152,32 @@ local function handle_chunked_message_body(server)
    -- This enables streaming content without having to fully buffer it.
    server.request.body = function()
       return function()
+         -- REMEMBER: Do not return a state on error; this is an iterator.
          local chunk_size_line = server.input:read("*l")
          if not chunk_size_line then
             server.log:error("unexpected EOF")
+            server.state = respond(server, {
+               status=400, reason="Bad Request", body="unexpected EOF",
+               headers={["Connection"]="close"},
+            })
             return
          end
          local chunk_size_hex, exts_str = chunk_size_line:match("^(%x+)(.*)\r$")
          if not chunk_size_hex then
             server.log:error("invalid chunk size")
+            server.state = respond(server, {
+               status=400, reason="Bad Request", body="invalid chunk size",
+               headers={["Connection"]="close"},
+            })
             return
          end
          local chunk_size = tonumber(chunk_size_hex, 16)
          if not chunk_size or chunk_size > server.max_chunk_size then
             server.log:error("invalid chunk size")
-            -- TODO: There are a ton of these error conditions that should
-            -- send a response before aborting.  Like 413 Payload Too Large...
+            server.state = respond(server, {
+               status=400, reason="Bad Request", body="invalid chunk size",
+               headers={["Connection"]="close"},
+            })
             return
          end
          server.log:debug("chunk size = ", chunk_size)
@@ -1165,6 +1199,10 @@ local function handle_chunked_message_body(server)
             local buf, err = server.input:read(chunk_size - #chunk)
             if not buf or #buf == 0 then
                server.log:error("reading body chunk failed: ", err or "EOF")
+               server.state = respond(server, {
+                  status=400, reason="Bad Request", body="reading body failed",
+                  headers={["Connection"]="close"},
+               })
                return
             end
             chunk = chunk .. buf
@@ -1173,6 +1211,10 @@ local function handle_chunked_message_body(server)
          local crlf = server.input:read(2)
          if crlf ~= "\r\n" then
             server.log:error("invalid chunk-data terminator")
+            server.state = respond(server, {
+               status=400, reason="Bad Request", body="invalid chunk-data",
+               headers={["Connection"]="close"},
+            })
             return
          end
          -- It is technically allowed for extension names to be repeated, so
@@ -1201,9 +1243,12 @@ local function handle_message_body(server, content_length)
    while #body < content_length do
       local buf = server.input:read(content_length - #body)
       if not buf or #buf == 0 then
-         -- TODO: 400 Bad Request
+         -- MUST respond 400 and close (RFC 9112 §6.3)
          server.log:error("body shorter than specified content length")
-         break
+         return respond(server, {
+            status=400, reason="Bad Request", body="body truncated",
+            headers={["Connection"]="close"},
+         })
       end
       body = body .. buf
    end
@@ -1225,21 +1270,35 @@ local function handle_blank_line(server)
 
    -- Transfer-Encoding overrides Content-Length (RFC 9112 §6.3)
    if transfer_encoding_header then
-      if transfer_encoding_header:concat() == "chunked" then
+      local codings = transfer_encoding_header.elements
+      local final_transfer_coding = codings[#codings]
+
+      -- Sender MUST apply chunked as the final transfer coding (RFC 9112 §6.1)
+      if final_transfer_coding and final_transfer_coding.value == "chunked" then
+         -- Decode the chunked framing.  Further decoding is up to the handler.
          handle_chunked_message_body(server)
       else
-         -- TODO: 400 Bad Request
-         server.log:error("unsupported transfer-encoding")
+         server.log:error("invalid transfer-encoding")
+         return respond(server, {
+            status=400, reason="Bad Request", body="invalid transfer-encoding",
+            headers={["Connection"]="close"},
+         })
       end
    elseif content_length_header then
       -- Be lenient and only use the last received content-length header value.
       local elements = content_length_header.elements
       local content_length = tonumber(elements[#elements].value)
       if content_length then
-         handle_message_body(server, content_length)
+         local err = handle_message_body(server, content_length)
+         if err then
+            return err
+         end
       else
-         -- TODO: 400 Bad Request
          server.log:error("invalid content-length")
+         return respond(server, {
+            status=400, reason="Bad Request", body="invalid content-length",
+            headers={["Connection"]="close"},
+         })
       end
    end
    return handle_request(server)
@@ -1357,10 +1416,12 @@ local function handle_request_line(server, line)
    elseif state == ServerState.HEADER_FIELD then
       return handle_header_field(server, line)
 
-   else
-      return ServerState.START_LINE
+   elseif state == ServerState.CLOSED then
+      return ServerState.CLOSED
 
    end
+
+   error("unreachable state")
 end
 
 
