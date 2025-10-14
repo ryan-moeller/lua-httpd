@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.10.0"
+M.VERSION = "0.10.1"
 
 
 -- HTTP-message = start-line
@@ -435,6 +435,8 @@ local FieldValueLexerAccept = {
 }
 -- Sanity check the array layout.
 assert(#FieldValueLexerAccept == FieldValueLexerState.ERROR)
+assert(string.packsize("j") == 8, "sizeof(LUA_INT_TYPE) is not 8 bytes")
+assert(#FieldValueLexerAccept < 16, "states will not fit packed in an integer")
 
 
 -- The lexer FSM initialization is deferred until we parse a field.
@@ -446,36 +448,62 @@ local function build_lexer_fsm()
    -- A single array-backed table should be the fastest representation in Lua.
    -- It has better space efficiency and cache locality than nested tables, and
    -- it uses only VM operations for lookup (as opposed to string.byte, which is
-   -- a call out of the VM into C).  The table is on the order of 8x less space
-   -- efficient than using a byte string, but it's still relatively small.
+   -- a call out of the VM into C).  We'll pack the entries into integers for
+   -- 16x space efficiency.  That should make it fit comfortably in L1 cache.
    local fsm = {}
 
-   -- States are numbered starting from 0 and occupy the higher-order bits of
-   -- the index.  The input byte occupies the low byte of the index.  Note that
-   -- the +1 offset is required for Lua's array-backed tables, which expect
-   -- indices to start at 1 for optimal performance.
+   -- The FSM table is indexed by the input byte to obtain the set of state
+   -- transitions encoded in a 64-bit integer.  States are numbered starting
+   -- from 0 and are used as a nibble index in the encoded entry.  Note that a
+   -- +1 offset to the input byte is required for Lua's array-backed tables,
+   -- which expect indices to start at 1 for optimal performance.
    --
-   -- As a micro-optimization, the table indexing math is inlined everywhere:
-   -- local function index(state, byte) return ((state << 8) | byte) + 1 end
+   -- This table layout distributes states across multiple cache lines, but we
+   -- should tend to stay within a small range of input bytes, keeping us in a
+   -- small set of cache lines.  We can expect to visit most states by reading
+   -- typical headers, while the second half of the table (non-ASCII input) is
+   -- rarely touched in practice.
    --
    -- We populate the table for every possible state and input byte to ensure
    -- array optimizations are possible.  Sparse keys would require use of the
-   -- hash table internal format.  We want the flat array format.  The shift
-   -- gives us space for 256 * the number of states, i.e. Nstates * Nbytes.
+   -- hash table internal format.  We want the flat array format.
    --
    -- There isn't a convenient way to get the number of entries in a hash table,
    -- so we use the size of the FieldValueLexerAccept array instead.  The FSM
    -- and Accept tables exclude the ERROR state to avoid wasting time and space.
-   for i = 1, (#FieldValueLexerAccept) << 8 do
-      -- Anything not caught by the rules below is invalid.
-      fsm[i] = FieldValueLexerState.ERROR
+   --
+   -- TODO: The packing assumes 64-bit integers.  This is the common size, but
+   -- some embedded systems (e.g. ESP8266) may use 32-bit integers.  We don't
+   -- work without some tweaks on embedded (non-POSIX) platforms already, but it
+   -- could be made to work with a little effort.
+   do
+      local all_errors = 0
+      for shift = 0, #FieldValueLexerAccept - 1, 4 do -- 4 bits per state
+         all_errors = all_errors | (FieldValueLexerState.ERROR << shift)
+      end
+      for i = 1, 256 do
+         -- Anything not caught by the rules below is invalid.
+         fsm[i] = all_errors
+      end
+   end
+
+   local function store(state, byte, value)
+      local index = byte + 1
+      local old = fsm[index]
+      local shift = state << 2
+      local mask = 0xf << shift
+      local new = value << shift
+      fsm[index] = (old & ~mask) | new
    end
 
    -- The setters table provides the different methods for interpreting the
    -- various key types used by rules.
    --
    -- setters[type(key)] => function(state, key, value)
-   local setters = {}
+   local setters = {
+      -- Number keys are used directly.
+      number = store,
+   }
 
    -- Expand a production rule into FSM transition rules.
    local function expand(state, rule)
@@ -484,15 +512,10 @@ local function build_lexer_fsm()
       setters[type(key)](state, key, value)
    end
 
-   -- Number keys are used directly.
-   function setters.number(state, key, value)
-      fsm[((state << 8) | key) + 1] = value
-   end
-
    -- String keys are iterated as a sequence of bytes.
    function setters.string(state, key, value)
       for i = 1, #key do
-         fsm[((state << 8 ) | key:byte(i)) + 1] = value
+         store(state, key:byte(i), value)
       end
    end
 
@@ -501,7 +524,7 @@ local function build_lexer_fsm()
       if key.start then
          -- Range form
          for byte = key.start, key.stop do
-            fsm[((state << 8) | byte) + 1] = value
+            store(state, byte, value)
          end
       else
          -- Array form
@@ -665,12 +688,6 @@ local function build_lexer_fsm()
    })
    -- The ERROR state immediately terminates the FSM, there is no way out.
 
-   -- TODO: This table stores a number for each entry, but it uses only 4 bits.
-   -- For embedded systems such as an ESP8266, that's the difference between
-   -- using all of the available memory and using only a fraction of it.
-   --
-   -- We could compress the table by packing the integers - keeping the table
-   -- small and fast but at the expense of some extra bit math.
    return fsm
 end
 
@@ -833,10 +850,7 @@ local function build_parser_luts()
       lut[i] = 0 -- NOP
    end
 
-   -- There is no direct way to get the number of states, but it is the size of
-   -- the lexer FSM / 256, i.e. eliminating the input byte portion of the index.
-   -- Note the parentheses to avoid being parsed as #(FieldValueLexerFSM >> 8).
-   for i = 1, (#FieldValueLexerFSM) >> 8 do
+   for i = 1, #FieldValueLexerAccept do
       final[i] = 0 -- NOP
    end
 
@@ -964,9 +978,10 @@ local function parse_field_value_impl(field, value)
 
    while parser.pos <= #value do
       local byte = value:byte(parser.pos)
+      local lexer_word = assert(FieldValueLexerFSM[byte + 1])
       local lexer_state = parser.next_lexer_state
-      local lexer_index = ((lexer_state << 8) | byte) + 1
-      local next_lexer_state = assert(FieldValueLexerFSM[lexer_index])
+      local lexer_shift = lexer_state << 2
+      local next_lexer_state = (lexer_word >> lexer_shift) & 0xf
 
       if next_lexer_state == FieldValueLexerState.ERROR or
          -- Ignore pathological input.
