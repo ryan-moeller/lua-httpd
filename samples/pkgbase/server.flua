@@ -368,7 +368,6 @@ server:add_route("GET", "^/ws$", function(request)
     return { headers=headers, status=101, reason="Switching Protocols", body=ws_main }
 end)
 
-server.log.level = httpd.DEBUG
-server:run() -- but not verbose debugging
+server:run(httpd.DEBUG)
 
 -- vim: set et sw=4:

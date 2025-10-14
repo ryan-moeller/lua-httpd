@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.8.0"
+M.VERSION = "0.9.0"
 
 
 -- HTTP-message = start-line
@@ -251,10 +251,10 @@ local function debug_server(server)
    local request = server.request
    local handlers = server.handlers[request.method]
 
-   log:debug(request.method)
+   log:debug("method = ", request.method)
    log:debug("#handlers = ", tostring(#handlers))
    if request.path ~= nil then
-      log:debug(request.path)
+      log:debug("path = ", request.path)
    end
    for k, v in pairs(request.params) do
       local values = type(v) == "table" and v or {v}
@@ -283,7 +283,7 @@ local function handle_request(server)
    local handlers = server.handlers[request.method]
    local response
 
-   if server.verbose and server.log.level >= M.DEBUG then
+   if server.log.level >= M.DEBUG then
       debug_server(server)
    end
 
@@ -305,6 +305,7 @@ local function handle_request(server)
       end
    end
 
+   -- TODO: move this to a separate function that can be reused for errors
    ::respond::
    server.log:info(request.method, " ", request.path, " ", response.status, " ",
       response.reason)
@@ -1119,9 +1120,7 @@ end
 
 
 local function handle_chunked_message_body(server)
-   if server.verbose then
-      server.log:info("body is chunked")
-   end
+   server.log:debug("body is chunked")
    -- For a chunked transfer, the body field of the request object will be a
    -- function returning an iterator over the chunks, used like:
    -- for chunk, exts_dict, exts_str in request.body() do
@@ -1147,10 +1146,8 @@ local function handle_chunked_message_body(server)
             -- send a response before aborting.  Like 413 Payload Too Large...
             return
          end
-         if server.verbose then
-            server.log:debug("chunk size = ", chunk_size)
-            server.log:debug("chunk extensions = ", exts_str)
-         end
+         server.log:debug("chunk size = ", chunk_size)
+         server.log:debug("chunk extensions = ", exts_str)
          if chunk_size == 0 then
             -- This is the end of the body.  Now read any trailer fields before
             -- returning control to the handler.
@@ -1188,6 +1185,11 @@ local function handle_chunked_message_body(server)
             table.insert(extension, #value > 0 and value or true)
             exts_dict[name] = extension
          end
+         if server.log.level >= M.TRACE then
+            for line in chunk:gmatch("[^\r\n]+") do
+               server.log:trace(">B ", line)
+            end
+         end
          return chunk, exts_dict, exts_str
       end
    end
@@ -1199,18 +1201,17 @@ local function handle_message_body(server, content_length)
    while #body < content_length do
       local buf = server.input:read(content_length - #body)
       if not buf or #buf == 0 then
-         server.log:warn("body shorter than specified content length")
+         -- TODO: 400 Bad Request
+         server.log:error("body shorter than specified content length")
          break
       end
       body = body .. buf
    end
 
-   if server.verbose then
-      server.log:debug("content length = ", content_length)
-      if server.log.level >= M.TRACE then
-         for line in body:gmatch("[^\r\n]+") do
-            server.log:trace(">B ", line)
-         end
+   server.log:debug("content length = ", content_length)
+   if server.log.level >= M.TRACE then
+      for line in body:gmatch("[^\r\n]+") do
+         server.log:trace(">B ", line)
       end
    end
    server.request.body = body
@@ -1222,10 +1223,12 @@ local function handle_blank_line(server)
    local transfer_encoding_header = request.headers["transfer-encoding"]
    local content_length_header = request.headers["content-length"]
 
+   -- Transfer-Encoding overrides Content-Length (RFC 9112 §6.3)
    if transfer_encoding_header then
       if transfer_encoding_header:concat() == "chunked" then
          handle_chunked_message_body(server)
       else
+         -- TODO: 400 Bad Request
          server.log:error("unsupported transfer-encoding")
       end
    elseif content_length_header then
@@ -1235,6 +1238,7 @@ local function handle_blank_line(server)
       if content_length then
          handle_message_body(server, content_length)
       else
+         -- TODO: 400 Bad Request
          server.log:error("invalid content-length")
       end
    end
@@ -1436,18 +1440,9 @@ function M.create_server(log, input, output)
    end
 
    function server:run(log_level)
-      if type(log_level) == "number" then
-         self.log.level = log_level
-         if log_level > M.WARN then
-            self.verbose = true
-         end
-      else
-         self.verbose = log_level == true
-      end
+      self.log.level = log_level
       for line in self.input:lines() do
-         if self.verbose then
-            self.log:trace(">C ", line)
-         end
+         self.log:trace(">C ", line)
          self.state = handle_request_line(self, line)
       end
    end

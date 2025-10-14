@@ -260,26 +260,18 @@ Register a handler for a given HTTP method and Lua pattern.
 Run the server.  Reads lines from `server.input` and dispatches requests to
 handlers, writing responses to `server.output`.
 
-* `log_level`: Set log output level and verbosity.
+* `log_level`: Set log output level.
 
-If `log_level` is `true`, the currently set `server.log.level` is used, and
-additional logging is enabled.  If a number, sets `server.log.level`:
+| Level | Name          | Description                        |
+| ----- | ------------- | ---------------------------------- |
+| 1     | `httpd.FATAL` | Errors requiring disconnect        |
+| 2     | `httpd.ERROR` | Errors requiring negative response |
+| 3     | `httpd.WARN`  | Errors that may be ignored         |
+| 4     | `httpd.INFO`  | Brief status information           |
+| 5     | `httpd.DEBUG` | Detailed state information         |
+| 6     | `httpd.TRACE` | Full request logging               |
 
-| Level | Name          |
-| ----- | ------------- |
-| 1     | `httpd.FATAL` |
-| 2     | `httpd.ERROR` |
-| 3     | `httpd.WARN`  |
-| 4     | `httpd.INFO`  |
-| 5     | `httpd.DEBUG` |
-| 6     | `httpd.TRACE` |
-
-Setting `log_level` greater than `httpd.WARN` also enables additional log
-messages.
-
-Passing `log_level` as `nil` or `false` and setting `server.log.level` greater
-than `httpd.WARN` is a valid configuration available for advanced control over
-logging.
+The default log level is `FATAL`.
 
 ### Server Object
 
