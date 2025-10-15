@@ -242,11 +242,10 @@ local function write_http_response(server, response)
    end
    -- Not Modified or No Content or Informational responses end after headers.
    -- RFC 9112 §6.3 (rule 1)
-   if response.status == 304 or response.status == 204 or
-      (response.status >= 100 and response.status <= 199) then
+   if status == 304 or status == 204 or (status >= 100 and status <= 199) then
       -- But when Switching Protocols, a response.body function may be used to
       -- handle the new protocol.
-      if response.status ~= 101 or type(body) ~= "function" then
+      if status ~= 101 or type(body) ~= "function" then
          return
       end
    end
@@ -260,21 +259,25 @@ end
 
 
 local function close_connection(server)
-   if server.input == io.stdin or server.output == io.stdout then
+   local input = server.input
+   local output = server.output
+
+   if input == io.stdin or output == io.stdout then
       -- We can't close stdin or stdout, we have to exit.
       os.exit()
    end
-   server.input:close()
-   if server.output ~= server.input then
-      server.output:close()
+   input:close()
+   if output ~= input then
+      output:close()
    end
 end
 
 
 local function respond(server, response)
+   local log = server.log
    local request = server.request
 
-   server.log:info(request.method, " ", request.path, " ", response.status, " ",
+   log:info(request.method, " ", request.path, " ", response.status, " ",
       response.reason)
    response.headers = wrap_response_fields(response.headers or {})
    write_http_response(server, response)
@@ -288,8 +291,8 @@ local function respond(server, response)
       close_connection(server)
       -- TODO: Accommodate a persistent server with an accept loop.  For now, we
       -- must trash the server after closing the connection.
-      if server.log ~= io.stderr then
-         server.log:close()
+      if log ~= io.stderr then
+         log:close()
       end
       return ServerState.CLOSED
    else
@@ -304,11 +307,12 @@ local function debug_server(server)
    local log = server.log
    local request = server.request
    local handlers = server.handlers[request.method]
+   local path = request.path
 
    log:debug("method = ", request.method)
    log:debug("#handlers = ", tostring(#handlers))
-   if request.path ~= nil then
-      log:debug("path = ", request.path)
+   if path ~= nil then
+      log:debug("path = ", path)
    end
    for k, v in pairs(request.params) do
       local values = type(v) == "table" and v or {v}
@@ -1158,7 +1162,10 @@ end
 
 
 local function handle_chunked_message_body(server)
-   server.log:debug("body is chunked")
+   local log = server.log
+   local input = server.input
+
+   log:debug("body is chunked")
    -- For a chunked transfer, the body field of the request object will be a
    -- function returning an iterator over the chunks, used like:
    -- for chunk, exts_dict, exts_str in request.body() do
@@ -1168,9 +1175,9 @@ local function handle_chunked_message_body(server)
    server.request.body = function()
       return function()
          -- REMEMBER: Do not return a state on error; this is an iterator.
-         local chunk_size_line = server.input:read("*l")
+         local chunk_size_line = input:read("*l")
          if not chunk_size_line then
-            server.log:error("unexpected EOF")
+            log:error("unexpected EOF")
             server.state = respond(server, {
                status=400, reason="Bad Request", body="unexpected EOF",
                headers={["Connection"]="close"},
@@ -1179,7 +1186,7 @@ local function handle_chunked_message_body(server)
          end
          local chunk_size_hex, exts_str = chunk_size_line:match("^(%x+)(.*)\r$")
          if not chunk_size_hex then
-            server.log:error("invalid chunk size")
+            log:error("invalid chunk size")
             server.state = respond(server, {
                status=400, reason="Bad Request", body="invalid chunk size",
                headers={["Connection"]="close"},
@@ -1188,20 +1195,20 @@ local function handle_chunked_message_body(server)
          end
          local chunk_size = tonumber(chunk_size_hex, 16)
          if not chunk_size or chunk_size > server.max_chunk_size then
-            server.log:error("invalid chunk size")
+            log:error("invalid chunk size")
             server.state = respond(server, {
                status=400, reason="Bad Request", body="invalid chunk size",
                headers={["Connection"]="close"},
             })
             return
          end
-         server.log:debug("chunk size = ", chunk_size)
-         server.log:debug("chunk extensions = ", exts_str)
+         log:debug("chunk size = ", chunk_size)
+         log:debug("chunk extensions = ", exts_str)
          if chunk_size == 0 then
             -- This is the end of the body.  Now read any trailer fields before
             -- returning control to the handler.
             server.request.trailers = {}
-            for line in server.input:lines() do
+            for line in input:lines() do
                server.state = handle_trailer_field(server, line)
                if server.state ~= ServerState.TRAILER_FIELD then
                   break
@@ -1211,9 +1218,9 @@ local function handle_chunked_message_body(server)
          end
          local chunk = ""
          repeat
-            local buf, err = server.input:read(chunk_size - #chunk)
+            local buf, err = input:read(chunk_size - #chunk)
             if not buf or #buf == 0 then
-               server.log:error("reading body chunk failed: ", err or "EOF")
+               log:error("reading body chunk failed: ", err or "EOF")
                server.state = respond(server, {
                   status=400, reason="Bad Request", body="reading body failed",
                   headers={["Connection"]="close"},
@@ -1225,7 +1232,7 @@ local function handle_chunked_message_body(server)
          until #chunk == chunk_size
          local crlf = server.input:read(2)
          if crlf ~= "\r\n" then
-            server.log:error("invalid chunk-data terminator")
+            log:error("invalid chunk-data terminator")
             server.state = respond(server, {
                status=400, reason="Bad Request", body="invalid chunk-data",
                headers={["Connection"]="close"},
@@ -1242,9 +1249,9 @@ local function handle_chunked_message_body(server)
             table.insert(extension, #value > 0 and value or true)
             exts_dict[name] = extension
          end
-         if server.log.level >= M.TRACE then
+         if log.level >= M.TRACE then
             for line in chunk:gmatch("[^\r\n]+") do
-               server.log:trace(">B ", line)
+               log:trace(">B ", line)
             end
          end
          return chunk, exts_dict, exts_str
@@ -1254,12 +1261,15 @@ end
 
 
 local function handle_message_body(server, content_length)
+   local log = server.log
+   local input = server.input
+
    local body = ""
    while #body < content_length do
-      local buf = server.input:read(content_length - #body)
+      local buf = input:read(content_length - #body)
       if not buf or #buf == 0 then
          -- MUST respond 400 and close (RFC 9112 §6.3)
-         server.log:error("body shorter than specified content length")
+         log:error("body shorter than specified content length")
          return respond(server, {
             status=400, reason="Bad Request", body="body truncated",
             headers={["Connection"]="close"},
@@ -1268,10 +1278,10 @@ local function handle_message_body(server, content_length)
       body = body .. buf
    end
 
-   server.log:debug("content length = ", content_length)
-   if server.log.level >= M.TRACE then
+   log:debug("content length = ", content_length)
+   if log.level >= M.TRACE then
       for line in body:gmatch("[^\r\n]+") do
-         server.log:trace(">B ", line)
+         log:trace(">B ", line)
       end
    end
    server.request.body = body
@@ -1279,6 +1289,7 @@ end
 
 
 local function handle_blank_line(server)
+   local log = server.log
    local request = server.request
    local transfer_encoding_header = request.headers["transfer-encoding"]
    local content_length_header = request.headers["content-length"]
@@ -1293,7 +1304,7 @@ local function handle_blank_line(server)
          -- Decode the chunked framing.  Further decoding is up to the handler.
          handle_chunked_message_body(server)
       else
-         server.log:error("invalid transfer-encoding")
+         log:error("invalid transfer-encoding")
          return respond(server, {
             status=400, reason="Bad Request", body="invalid transfer-encoding",
             headers={["Connection"]="close"},
@@ -1309,7 +1320,7 @@ local function handle_blank_line(server)
             return err
          end
       else
-         server.log:error("invalid content-length")
+         log:error("invalid content-length")
          return respond(server, {
             status=400, reason="Bad Request", body="invalid content-length",
             headers={["Connection"]="close"},
