@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.10.1"
+M.VERSION = "0.10.2"
 
 
 -- HTTP-message = start-line
@@ -1146,7 +1146,7 @@ local function handle_trailer_field(server, line)
          local lname = string.lower(name)
          -- Cookies received in trailers are intentionally ignored.
          -- We'll just throw them in with the trailers instead.
-         update_fields(server.request.trailers, name, value)
+         update_fields(server.request.trailers, lname, value)
       else
          server.log:warn("ignoring invalid trailer: ", line)
       end
