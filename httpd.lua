@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.10.2"
+M.VERSION = "0.10.3"
 
 
 -- HTTP-message = start-line
@@ -1138,21 +1138,28 @@ end
 
 
 local function handle_trailer_field(server, line)
+   local log = server.log
+
    if line == "\r" then
       -- When there are no trailers left we get just a blank line.
       -- That marks the end of this request.
       return ServerState.RESPONSE
    else
       local name, value = parse_field(line)
+      if not name then
+         log:error("invalid field")
+         return respond(server, {
+            status=400, reason="Bad Request", body="invalid field",
+         })
+      end
 
-      if name then
-         -- Field names are case-insensitive.
-         local lname = string.lower(name)
+      -- Field names are case-insensitive.
+      local lname = string.lower(name)
+      if lname == "cookie" then
          -- Cookies received in trailers are intentionally ignored.
-         -- We'll just throw them in with the trailers instead.
-         update_fields(server.request.trailers, lname, value)
+         log:warn("ignoring cookie in trailers")
       else
-         server.log:warn("ignoring invalid trailer: ", line)
+         update_fields(server.request.trailers, lname, value)
       end
 
       -- Look for more trailers.
@@ -1291,8 +1298,17 @@ end
 local function handle_blank_line(server)
    local log = server.log
    local request = server.request
+   local host_header = request.headers["host"]
    local transfer_encoding_header = request.headers["transfer-encoding"]
    local content_length_header = request.headers["content-length"]
+
+   -- Client MUST send one valid Host header (RFC 9112 §3.2)
+   if not host_header or #host_header.raw ~= 1 then
+      log:error("invalid host")
+      return respond(server, {
+         status=400, reason="Bad Request", body="invalid host",
+      })
+   end
 
    -- Transfer-Encoding overrides Content-Length (RFC 9112 §6.3)
    if transfer_encoding_header then
@@ -1414,17 +1430,19 @@ local function handle_header_field(server, line)
       return handle_blank_line(server)
    else
       local name, value = parse_field(line)
+      if not name then
+         server.log:error("invalid field")
+         return respond(server, {
+            status=400, reason="Bad Request", body="invalid field",
+         })
+      end
 
-      if name then
-         -- Field names are case-insensitive.
-         local lname = string.lower(name)
-         if lname == "cookie" then
-            set_cookies(server, value)
-         else
-            update_fields(server.request.headers, lname, value)
-         end
+      -- Field names are case-insensitive.
+      local lname = string.lower(name)
+      if lname == "cookie" then
+         set_cookies(server, value)
       else
-         server.log:warn("ignoring invalid header: ", line)
+         update_fields(server.request.headers, lname, value)
       end
 
       -- Look for more headers.
