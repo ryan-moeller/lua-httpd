@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.10.3"
+M.VERSION = "0.10.4"
 
 
 -- HTTP-message = start-line
@@ -194,11 +194,23 @@ end
 local function write_http_response(server, response)
    local output = server.output
 
+   local method = server.request.method
+
    local status = response.status
    local reason = response.reason
    local headers = response.headers
    local cookies = response.cookies
    local body = response.body
+
+   local informational = status >= 100 and status <= 199
+   local switching_protocols = status == 101
+   local successful = status >= 200 and status <= 299
+   local no_content = status == 204
+   local not_modified = status == 304
+
+   local body_type = type(body)
+   local body_string = body_type == "string" and body
+   local body_function = body_type == "function" and body
 
    -- MUST generate a Date header field in certain cases (RFC 9110 §6.6.1)
    -- Doesn't hurt to always send one.
@@ -206,21 +218,23 @@ local function write_http_response(server, response)
       headers["Date"] = os.date("!%a, %d %b %Y %H:%M:%S GMT")
    end
 
-   if not headers["Content-Length"] then
+   -- MUST NOT send Content-Length with any Informational or No Content
+   -- response, or Successful CONNECT response (RFC 9110 §8.6)
+   if not (informational or no_content or (successful and method == "CONNECT")
+      or headers["Content-Length"]) then
+      -- SHOULD send Content-Length when content size is known (RFC 9110 §8.6)
       if not body then
          headers["Content-Length"] = 0
-      elseif type(body) == "string" then
-         headers["Content-Length"] = #body
-      elseif type(body) == "function" then
+      elseif body_string then
+         headers["Content-Length"] = #body_string
+      elseif body_function then
          -- Send "Connection: close" when trying to send a body with unknown
-         -- length and not using chunked transfer encoding.  Take care not to
-         -- interfere with connection upgrades.
+         -- length and not using chunked transfer encoding.
          local xfer_enc = headers["Transfer-Encoding"]
          if not xfer_enc or not xfer_enc:contains_value("chunked") then
             local connection = headers["Connection"]
             if connection then
-               if not connection:contains_value("Upgrade") and
-                  not connection:contains_value("close") then
+               if not connection:contains_value("close") then
                   table.insert(connection, "close")
                end
             else
@@ -237,23 +251,23 @@ local function write_http_response(server, response)
 
    -- MUST NOT send content in the response to HEAD (RFC 9110 §9.3.2)
    -- Also described in RFC 9112 §6.3 (rule 1).
-   if server.request.method == "HEAD" then
+   if method == "HEAD" then
       return
    end
    -- Not Modified or No Content or Informational responses end after headers.
    -- RFC 9112 §6.3 (rule 1)
-   if status == 304 or status == 204 or (status >= 100 and status <= 199) then
+   if not_modified or no_content or informational then
       -- But when Switching Protocols, a response.body function may be used to
       -- handle the new protocol.
-      if status ~= 101 or type(body) ~= "function" then
+      if not (switching_protocols and body_function) then
          return
       end
    end
-   if type(body) == "string" then
-      output:write(body)
-   elseif type(body) == "function" then
+   if body_string then
+      output:write(body_string)
+   elseif body_function then
       output:flush()
-      body(output)
+      body_function(output)
    end
 end
 
