@@ -114,6 +114,7 @@ end
 local theme = "darkly"
 
 local server = httpd.create_server(httpd.INFO, "/var/log/beup.log")
+local log = server.log
 server:add_route("GET", "^/$", function(request)
     local body = template.process([[
 <!DOCTYPE html>
@@ -217,7 +218,6 @@ server:add_route("GET", "^/latest$", function(request)
 end)
 server:add_route("POST", "^/update$", function(request)
     -- FIXME: this whole function is nasty ;)
-    local log = request.server.log
     log:trace("checking request validity")
     local content_type = request.headers["content-type"]
     if not content_type or not content_type:contains_value("application/x-www-form-urlencoded") then

@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.11.0"
+M.VERSION = "0.12.0"
 
 
 -- HTTP-message = start-line
@@ -14,12 +14,12 @@ M.VERSION = "0.11.0"
 --                CRLF
 --                [ message-body ]
 --
--- The server reads HTTP-messages from stdin and parses the data in order
+-- The connection reads HTTP-messages from input and parses the data in order
 -- to route and dispatch to a handler for processing.
 --
--- The server state is a waiting state. So if server.state == START_LINE,
--- we're looking for a start line next.
-local ServerState = {
+-- The connection state is a waiting state. So if state == START_LINE, we're
+-- looking for a start line next in the input.
+local ConnectionState = {
    START_LINE = 0,
    HEADER_FIELD = 1,
    TRAILER_FIELD = 2,
@@ -28,102 +28,57 @@ local ServerState = {
 }
 
 
-local function decode(s)
-   local function char(hex)
-      return string.char(tonumber(hex, 16))
-   end
+local Connection = {}
 
-   s = string.gsub(s, "+", " ")
-   s = string.gsub(s, "%%(%x%x)", char)
-   s = string.gsub(s, "\r\n", "\n")
 
-   return s
+function Connection:read(...)
+   return self.input:read(...)
 end
 
 
-local function encode(s)
-   local function hex(char)
-      return string.format("%%%02X", string.byte(char))
-   end
-
-   s = string.gsub(s, "\n", "\r\n")
-   s = string.gsub(s, "([^%w %-%_%.%~])", hex)
-   s = string.gsub(s, " ", "+")
-
-   return s
+function Connection:lines(...)
+   return self.input:lines(...)
 end
 
 
-local function parse_request_query(query)
-   local params = {}
-
-   local function parse(kv)
-      local encoded_key, encoded_value = string.match(kv, "^(.*)=(.*)$")
-      if encoded_key ~= nil then
-         local key = decode(encoded_key)
-         local value = decode(encoded_value)
-         local param = params[key] or {}
-         table.insert(param, value)
-         params[key] = param
-      end
-   end
-
-   string.gsub(query, "([^;&]+)", parse)
-
-   return params
+function Connection:write(...)
+   return self.output:write(...)
 end
 
 
-local function parse_request_path(s)
-   local encoded_path, encoded_query = string.match(s, "^(.*)%?(.*)$")
-   if encoded_path == nil then
-      return decode(s), {}
-   end
-
-   local path = decode(encoded_path)
-   local params = parse_request_query(encoded_query)
-
-   return path, params
+function Connection:flush()
+   return self.output:flush()
 end
 
 
-local function handle_start_line(server, line)
-   -- start-line = request-line / status-line
-   -- request-line = method SP request-target SP HTTP-version CRLF
-   -- method = token
-   local method, rawpath, version = line:match("^(%g+) (%g+) (HTTP/1.1)\r$")
-   if not method then
-      -- No match.  We'll just log the oddity and try the next line.
-      server.log:warn("invalid start-line in request")
-      return ServerState.START_LINE
+function Connection:close()
+   local input = self.input
+   local output = self.output
+
+   if input == io.stdin or output == io.stdout then
+      -- We can't close stdin or stdout, we have to exit.
+      os.exit()
    end
-   local path, params = parse_request_path(rawpath)
-   server.request = {
-      server = server,
-      method = method,
-      path = path,
-      params = params,
-      version = version,
-      headers = {},
-      cookies = {}
-   }
-   return ServerState.HEADER_FIELD
+   input:close()
+   if output ~= input then
+      output:close()
+   end
 end
 
 
 -- Helper for writing a list of fields.
 -- This includes the terminator.
-local function write_fields(output, fields, cookies)
+function Connection:write_fields(fields, cookies)
    -- The order of field lines with different names is not significant
    -- (RFC 9110 §5.3), so iterating table keys is acceptable.
    for name, value in pairs(fields or {}) do
       if type(value) == "table" then
          -- Accept an ordered list of values for repeated fields.
          for _, v in ipairs(value) do
-            output:write(name, ": ", v, "\r\n")
+            self:write(name, ": ", v, "\r\n")
          end
       else
-         output:write(name, ": ", value, "\r\n")
+         self:write(name, ": ", value, "\r\n")
       end
    end
    -- Servers SHOULD NOT set the same cookie-name more than once in a response
@@ -131,9 +86,32 @@ local function write_fields(output, fields, cookies)
    -- are set is not specified to be significant, so iterating table keys is
    -- acceptable.
    for name, value in pairs(cookies or {}) do
-      output:write("Set-Cookie: ", name, "=", value, "\r\n")
+      self:write("Set-Cookie: ", name, "=", value, "\r\n")
    end
-   output:write("\r\n")
+   self:write("\r\n")
+end
+
+
+-- Helper for chunk-encoded body transfers
+function Connection:write_chunk(chunk, exts)
+   local ext = ""
+   if exts and #exts > 0 then
+      ext = ";" .. table.concat(exts, ";")
+   end
+   self:write(("%x%s\r\n"):format(#chunk, ext))
+   self:write(chunk)
+   self:write("\r\n")
+end
+
+
+-- Helper for concluding chunk-encoded body transfers
+function Connection:last_chunk(trailers, exts)
+   local ext = ""
+   if exts and #exts > 0 then
+      ext = ";" .. table.concat(exts, ";")
+   end
+   self:write(("0%s\r\n"):format(ext))
+   self:write_fields(trailers)
 end
 
 
@@ -187,14 +165,11 @@ local function wrap_response_fields(fields)
 end
 
 
--- expects a server table and a response table
 -- example response table:
 -- { status=404, reason="Not Found", headers={}, cookies={},
 --   body="404 Not Found" }
-local function write_http_response(server, response)
-   local output = server.output
-
-   local method = server.request.method
+function Connection:write_http_response(response)
+   local method = self.request.method
 
    local status = response.status
    local reason = response.reason
@@ -232,10 +207,10 @@ local function write_http_response(server, response)
          -- length and not using chunked transfer encoding.
          local xfer_enc = headers["Transfer-Encoding"]
          if not xfer_enc or not xfer_enc:contains_value("chunked") then
-            local connection = headers["Connection"]
-            if connection then
-               if not connection:contains_value("close") then
-                  table.insert(connection, "close")
+            local connection_header = headers["Connection"]
+            if connection_header then
+               if not connection_header:contains_value("close") then
+                  table.insert(connection_header, "close")
                end
             else
                headers["Connection"] = "close"
@@ -245,9 +220,9 @@ local function write_http_response(server, response)
    end
 
    local statusline = string.format("HTTP/1.1 %03d %s\r\n", status, reason)
-   output:write(statusline)
+   self:write(statusline)
 
-   write_fields(output, headers, cookies)
+   self:write_fields(headers, cookies)
 
    -- MUST NOT send content in the response to HEAD (RFC 9110 §9.3.2)
    -- Also described in RFC 9112 §6.3 (rule 1).
@@ -264,37 +239,22 @@ local function write_http_response(server, response)
       end
    end
    if body_string then
-      output:write(body_string)
+      self:write(body_string)
    elseif body_function then
-      output:flush()
-      body_function(output)
+      self:flush()
+      body_function(self)
    end
 end
 
 
-local function close_connection(server)
-   local input = server.input
-   local output = server.output
-
-   if input == io.stdin or output == io.stdout then
-      -- We can't close stdin or stdout, we have to exit.
-      os.exit()
-   end
-   input:close()
-   if output ~= input then
-      output:close()
-   end
-end
-
-
-local function respond(server, response)
-   local log = server.log
-   local request = server.request
+function Connection:respond(response)
+   local log = self.server.log
+   local request = self.request
 
    log:info(request.method, " ", request.path, " ", response.status, " ",
       response.reason)
    response.headers = wrap_response_fields(response.headers or {})
-   write_http_response(server, response)
+   self:write_http_response(response)
 
    -- HTTP/1.1 connections are keep-alive by default.
    local req_connection = request.headers["connection"]
@@ -302,22 +262,137 @@ local function respond(server, response)
    local res_connection = response.headers["Connection"]
    local res_close = res_connection and res_connection:contains_value("close")
    if req_close or res_close then
-      close_connection(server)
-      -- TODO: Accommodate a persistent server with an accept loop.  For now, we
-      -- must trash the server after closing the connection.  Fix this with a
-      -- per-connection state rather than per-server.
-      return ServerState.CLOSED
+      self:close()
+      return ConnectionState.CLOSED
    else
-      server.output:flush()
+      self:flush()
    end
-   return ServerState.START_LINE
+   return ConnectionState.START_LINE
+end
+
+
+local function decode(s)
+   local function char(hex)
+      return string.char(tonumber(hex, 16))
+   end
+
+   s = string.gsub(s, "+", " ")
+   s = string.gsub(s, "%%(%x%x)", char)
+   s = string.gsub(s, "\r\n", "\n")
+
+   return s
+end
+
+
+local function encode(s)
+   local function hex(char)
+      return string.format("%%%02X", string.byte(char))
+   end
+
+   s = string.gsub(s, "\n", "\r\n")
+   s = string.gsub(s, "([^%w %-%_%.%~])", hex)
+   s = string.gsub(s, " ", "+")
+
+   return s
+end
+
+
+local function parse_request_query(query)
+   local params = {}
+
+   local function parse(kv)
+      local encoded_key, encoded_value = string.match(kv, "^(.*)=(.*)$")
+      if encoded_key ~= nil then
+         local key = decode(encoded_key)
+         local value = decode(encoded_value)
+         local param = params[key] or {}
+         table.insert(param, value)
+         params[key] = param
+      end
+   end
+
+   string.gsub(query, "([^;&]+)", parse)
+
+   return params
+end
+
+
+local function parse_request_path(s)
+   -- We already went through %g, so only a few characters are left to exclude.
+   -- This is not as strict as it could be, but it is simple.
+   local always_invalid = '"<>\\^`{|}'
+   -- Path ends at ? or #.
+   local path_pattern = "^([^?#"..always_invalid.."]*)"
+   -- Query ends at #.
+   local query_pattern = "%?([^#"..always_invalid.."]*)$"
+   -- Both patterns prohibit a fragment portion.
+   local path_query_pattern = path_pattern..query_pattern
+   local path_only_pattern = path_pattern.."$"
+
+   local encoded_path, encoded_query = string.match(s, path_query_pattern)
+   if not encoded_path then
+      local encoded_path = string.match(s, path_only_pattern)
+      if not encoded_path then
+         return nil
+      end
+
+      local path = decode(encoded_path)
+
+      return path, {}
+   end
+
+   local path = decode(encoded_path)
+   local params = parse_request_query(encoded_query)
+
+   return path, params
+end
+
+
+function Connection:handle_start_line(line)
+   local log = self.server.log
+
+   -- SHOULD ignore blank lines (RFC 9112 §2.2)
+   if line == "\r" then
+      return ConnectionState.START_LINE
+   end
+
+   -- start-line   = request-line / status-line
+   -- request-line = method SP request-target SP HTTP-version CRLF
+   -- method       = token
+   local method, rawpath, version = line:match("^(%g+) (%g+) (HTTP/1.1)\r$")
+   if not method then
+      log:fatal("invalid request-line")
+      return self:respond{
+         status=400, reason="Bad Request", body="invalid request-line",
+         headers={["Connection"]="close"},
+      }
+   end
+   local path, params = parse_request_path(rawpath)
+   if not path then
+      log:fatal("invalid request-target")
+      return self:respond{
+         status=400, reason="Bad Request", body="invalid request-target",
+         headers={["Connection"]="close"},
+      }
+   end
+   self.request = {
+      connection = self,
+      method = method,
+      path = path,
+      params = params,
+      version = version,
+      headers = {},
+      cookies = {}
+   }
+   return ConnectionState.HEADER_FIELD
 end
 
 
 -- Log some debugging info.
-local function debug_server(server)
+function Connection:debug()
+   local server = self.server
    local log = server.log
-   local request = server.request
+   local request = self.request
    local handlers = server.handlers[request.method]
    local path = request.path
 
@@ -336,19 +411,20 @@ local function debug_server(server)
 end
 
 
-local function handle_request(server)
-   local request = server.request
+function Connection:handle_request()
+   local server = self.server
+   local request = self.request
    local handlers = server.handlers[request.method]
 
    if server.log.level >= M.DEBUG then
-      debug_server(server)
+      self:debug()
    end
 
    -- Check if we implement this method.
    if not handlers then
-      return respond(server, {
+      return self:respond{
          status=501, reason="Not Implemented", body="not implemented",
-      })
+      }
    end
 
    -- Try to find a location matching the request.
@@ -357,16 +433,16 @@ local function handle_request(server)
       local matches = { string.match(request.path, pattern) }
       if #matches > 0 then
          request.matches = matches
-         server.state = ServerState.RESPONSE
+         self.state = ConnectionState.RESPONSE
          local response = handler(request)
-         if server.state ~= ServerState.RESPONSE then
+         if self.state ~= ConnectionState.RESPONSE then
             -- An error occurred in the handler.
-            return server.state
+            return self.state
          end
-         return respond(server, response)
+         return self:respond(response)
       end
    end
-   return respond(server, {status=404, reason="Not Found", body="not found"})
+   return self:respond{status=404, reason="Not Found", body="not found"}
 end
 
 
@@ -1149,20 +1225,20 @@ local function parse_field(line)
 end
 
 
-local function handle_trailer_field(server, line)
-   local log = server.log
+function Connection:handle_trailer_field(line)
+   local log = self.server.log
 
    if line == "\r" then
       -- When there are no trailers left we get just a blank line.
       -- That marks the end of this request.
-      return ServerState.RESPONSE
+      return ConnectionState.RESPONSE
    else
       local name, value = parse_field(line)
       if not name then
          log:error("invalid field")
-         return respond(server, {
+         return self:respond{
             status=400, reason="Bad Request", body="invalid field",
-         })
+         }
       end
 
       -- Field names are case-insensitive.
@@ -1171,18 +1247,19 @@ local function handle_trailer_field(server, line)
          -- Cookies received in trailers are intentionally ignored.
          log:warn("ignoring cookie in trailers")
       else
-         update_fields(server.request.trailers, lname, value)
+         update_fields(self.request.trailers, lname, value)
       end
 
       -- Look for more trailers.
-      return ServerState.TRAILER_FIELD
+      return ConnectionState.TRAILER_FIELD
    end
 end
 
 
-local function handle_chunked_message_body(server)
+function Connection:handle_chunked_message_body()
+   local server = self.server
    local log = server.log
-   local input = server.input
+   local max_chunk_size = server.max_chunk_size
 
    log:debug("body is chunked")
    -- For a chunked transfer, the body field of the request object will be a
@@ -1191,34 +1268,34 @@ local function handle_chunked_message_body(server)
    --     -- do things
    -- end
    -- This enables streaming content without having to fully buffer it.
-   server.request.body = function()
+   self.request.body = function()
       return function()
          -- REMEMBER: Do not return a state on error; this is an iterator.
-         local chunk_size_line = input:read("*l")
+         local chunk_size_line = self:read("*l")
          if not chunk_size_line then
             log:error("unexpected EOF")
-            server.state = respond(server, {
+            self.state = self:respond{
                status=400, reason="Bad Request", body="unexpected EOF",
                headers={["Connection"]="close"},
-            })
+            }
             return
          end
          local chunk_size_hex, exts_str = chunk_size_line:match("^(%x+)(.*)\r$")
          if not chunk_size_hex then
             log:error("invalid chunk size")
-            server.state = respond(server, {
+            self.state = self:respond{
                status=400, reason="Bad Request", body="invalid chunk size",
                headers={["Connection"]="close"},
-            })
+            }
             return
          end
          local chunk_size = tonumber(chunk_size_hex, 16)
-         if not chunk_size or chunk_size > server.max_chunk_size then
+         if not chunk_size or chunk_size > max_chunk_size then
             log:error("invalid chunk size")
-            server.state = respond(server, {
+            self.state = self:respond{
                status=400, reason="Bad Request", body="invalid chunk size",
                headers={["Connection"]="close"},
-            })
+            }
             return
          end
          log:debug("chunk size = ", chunk_size)
@@ -1226,10 +1303,10 @@ local function handle_chunked_message_body(server)
          if chunk_size == 0 then
             -- This is the end of the body.  Now read any trailer fields before
             -- returning control to the handler.
-            server.request.trailers = {}
-            for line in input:lines() do
-               server.state = handle_trailer_field(server, line)
-               if server.state ~= ServerState.TRAILER_FIELD then
+            self.request.trailers = {}
+            for line in self:lines() do
+               self.state = self:handle_trailer_field(line)
+               if self.state ~= ConnectionState.TRAILER_FIELD then
                   break
                end
             end
@@ -1237,25 +1314,25 @@ local function handle_chunked_message_body(server)
          end
          local chunk = ""
          repeat
-            local buf, err = input:read(chunk_size - #chunk)
+            local buf, err = self:read(chunk_size - #chunk)
             if not buf or #buf == 0 then
                log:error("reading body chunk failed: ", err or "EOF")
-               server.state = respond(server, {
+               self.state = self:respond{
                   status=400, reason="Bad Request", body="reading body failed",
                   headers={["Connection"]="close"},
-               })
+               }
                return
             end
             chunk = chunk .. buf
             assert(#chunk <= chunk_size)
          until #chunk == chunk_size
-         local crlf = server.input:read(2)
+         local crlf = self:read(2)
          if crlf ~= "\r\n" then
             log:error("invalid chunk-data terminator")
-            server.state = respond(server, {
+            self.state = self:respond{
                status=400, reason="Bad Request", body="invalid chunk-data",
                headers={["Connection"]="close"},
-            })
+            }
             return
          end
          -- It is technically allowed for extension names to be repeated, so
@@ -1279,20 +1356,19 @@ local function handle_chunked_message_body(server)
 end
 
 
-local function handle_message_body(server, content_length)
-   local log = server.log
-   local input = server.input
+function Connection:handle_message_body(content_length)
+   local log = self.server.log
 
    local body = ""
    while #body < content_length do
-      local buf = input:read(content_length - #body)
+      local buf = self:read(content_length - #body)
       if not buf or #buf == 0 then
          -- MUST respond 400 and close (RFC 9112 §6.3)
          log:error("body shorter than specified content length")
-         return respond(server, {
+         return self:respond{
             status=400, reason="Bad Request", body="body truncated",
             headers={["Connection"]="close"},
-         })
+         }
       end
       body = body .. buf
    end
@@ -1303,13 +1379,13 @@ local function handle_message_body(server, content_length)
          log:trace(">B ", line)
       end
    end
-   server.request.body = body
+   self.request.body = body
 end
 
 
-local function handle_blank_line(server)
-   local log = server.log
-   local request = server.request
+function Connection:handle_blank_line()
+   local log = self.server.log
+   local request = self.request
    local host_header = request.headers["host"]
    local transfer_encoding_header = request.headers["transfer-encoding"]
    local content_length_header = request.headers["content-length"]
@@ -1317,9 +1393,9 @@ local function handle_blank_line(server)
    -- Client MUST send one valid Host header (RFC 9112 §3.2)
    if not host_header or #host_header.raw ~= 1 then
       log:error("invalid host")
-      return respond(server, {
+      return self:respond{
          status=400, reason="Bad Request", body="invalid host",
-      })
+      }
    end
 
    -- Transfer-Encoding overrides Content-Length (RFC 9112 §6.3)
@@ -1330,32 +1406,32 @@ local function handle_blank_line(server)
       -- Sender MUST apply chunked as the final transfer coding (RFC 9112 §6.1)
       if final_transfer_coding and final_transfer_coding.value == "chunked" then
          -- Decode the chunked framing.  Further decoding is up to the handler.
-         handle_chunked_message_body(server)
+         self:handle_chunked_message_body()
       else
          log:error("invalid transfer-encoding")
-         return respond(server, {
+         return self:respond{
             status=400, reason="Bad Request", body="invalid transfer-encoding",
             headers={["Connection"]="close"},
-         })
+         }
       end
    elseif content_length_header then
       -- Be lenient and only use the last received content-length header value.
       local elements = content_length_header.elements
       local content_length = tonumber(elements[#elements].value)
       if content_length then
-         local err = handle_message_body(server, content_length)
+         local err = self:handle_message_body(content_length)
          if err then
             return err
          end
       else
          log:error("invalid content-length")
-         return respond(server, {
+         return self:respond{
             status=400, reason="Bad Request", body="invalid content-length",
             headers={["Connection"]="close"},
-         })
+         }
       end
    end
-   return handle_request(server)
+   return self:handle_request()
 end
 
 
@@ -1374,7 +1450,7 @@ end
 --                 (octets 0 - 31) and DEL (127)>
 --
 -- References: RFC 6265 §4.1.1 & §4.2.1, RFC 2616 §2.2
-local function set_cookies(server, cookie)
+function Connection:set_cookies(cookie)
    -- Browsers do not send cookie attributes in requests.
    local pattern = table.concat({
       "^",                                                  -- no skipping ahead
@@ -1391,7 +1467,7 @@ local function set_cookies(server, cookie)
    local pos = 1
    local valid = false
    -- Cookie header is only allowed to appear once.  Ignore repeats.
-   if #server.cookies > 0 then
+   if #self.cookies > 0 then
       goto check_valid
    end
    while pos <= #cookie do
@@ -1407,10 +1483,10 @@ local function set_cookies(server, cookie)
    valid = tail == ""
    ::check_valid::
    if not valid then
-      server.log:warn("ignoring invalid Cookie header")
+      self.server.log:warn("ignoring invalid Cookie header")
       return
    end
-   server.cookies = cookies
+   self.cookies = cookies
 end
 
 
@@ -1424,56 +1500,55 @@ local values = {
   "a=b",                                           -- valid
 }
 for _, value in ipairs(values) do
-   local server = {
+   local connection = {
       cookies = {},
-      log = io.stderr,
+      server = {log={warn=function() end}},
    }
    print("Cookie:", value)
-   set_cookies(server, value)
-   --print("server:", ucl.to_json(server)) -- libucl segfaults on server.log!
-   print("cookies:", ucl.to_json(server.cookies))
+   connection:set_cookies(value)
+   print("cookies:", ucl.to_json(connection.cookies))
 end
 --]]--
 
 
-local function handle_header_field(server, line)
+function Connection:handle_header_field(line)
    if line == "\r" then
       -- When there are no headers left we get just a blank line.
-      return handle_blank_line(server)
+      return self:handle_blank_line()
    else
       local name, value = parse_field(line)
       if not name then
-         server.log:error("invalid field")
-         return respond(server, {
+         self.server.log:error("invalid field")
+         return self:respond{
             status=400, reason="Bad Request", body="invalid field",
-         })
+         }
       end
 
       -- Field names are case-insensitive.
       local lname = string.lower(name)
       if lname == "cookie" then
-         set_cookies(server, value)
+         self:set_cookies(value)
       else
-         update_fields(server.request.headers, lname, value)
+         update_fields(self.request.headers, lname, value)
       end
 
       -- Look for more headers.
-      return ServerState.HEADER_FIELD
+      return ConnectionState.HEADER_FIELD
    end
 end
 
 
-local function handle_request_line(server, line)
-   local state = server.state
+function Connection:handle_request_line(line)
+   local state = self.state
 
-   if state == ServerState.START_LINE then
-      return handle_start_line(server, line)
+   if state == ConnectionState.START_LINE then
+      return self:handle_start_line(line)
 
-   elseif state == ServerState.HEADER_FIELD then
-      return handle_header_field(server, line)
+   elseif state == ConnectionState.HEADER_FIELD then
+      return self:handle_header_field(line)
 
-   elseif state == ServerState.CLOSED then
-      return ServerState.CLOSED
+   elseif state == ConnectionState.CLOSED then
+      return ConnectionState.CLOSED
 
    end
 
@@ -1547,6 +1622,9 @@ function stdio_listener:accept()
 end
 
 
+local connection_metatable = {__index=Connection}
+
+
 function M.create_server(log_level, log)
    local server = {
       log = logger(log or io.stderr, log_level or M.FATAL),
@@ -1566,13 +1644,15 @@ function M.create_server(log_level, log)
    end
 
    function server:accept(input, output)
-      -- TODO: these fields should become a connection object
-      self.state = ServerState.START_LINE
-      self.input = input or io.stdin
-      self.output = output or io.stdout
-      for line in self.input:lines() do
+      local connection = setmetatable({
+         state = ConnectionState.START_LINE,
+         input = input or io.stdin,
+         output = output or io.stdout,
+         server = server,
+      }, connection_metatable)
+      for line in connection:lines() do
          self.log:trace(">C ", line)
-         self.state = handle_request_line(self, line)
+         connection.state = connection:handle_request_line(line)
       end
    end
 
@@ -1589,26 +1669,6 @@ end
 M.parse_query_string = parse_request_query
 M.percent_decode = decode
 M.percent_encode = encode
-
-
--- Helper for chunk-encoded body transfers
-function M.write_chunk(output, chunk, exts)
-   if exts and #exts > 0 then
-      exts = ";" .. table.concat(exts, ";")
-   else
-      exts = ""
-   end
-   output:write(("%x%s\r\n"):format(#chunk, exts))
-   output:write(chunk)
-   output:write("\r\n")
-end
-
-
--- Helper for concluding chunk-encoded body transfers
-function M.write_trailers(output, trailers)
-   output:write("0\r\n")
-   write_fields(output, trailers)
-end
 
 
 return M

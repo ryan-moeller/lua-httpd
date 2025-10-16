@@ -53,6 +53,7 @@ local template <const> = require("template")
 local ucl <const> = require("ucl")
 
 local server <const> = httpd.create_server(httpd.INFO, logfile)
+local log <const> = server.log
 
 server:add_route("GET", "^/$", function(request)
     local headers <const> = {
@@ -147,7 +148,6 @@ server:add_route("GET", "^/scripts/[^/]+%.js$", function(request)
     local lfs <const> = require("lfs")
     local sendfile <const> = require("sendfile")
 
-    log = request.server.log
     local p <const> = relpath(request.path)
     local st <const>, err <const>, code <const> = lfs.attributes(p)
     if not st then
@@ -174,7 +174,8 @@ server:add_route("GET", "^/scripts/[^/]+%.js$", function(request)
             return { status=500, reason="Internal Server Error", body="internal server error" }
         end
     end
-    local function body(output)
+    local function body(conn)
+        local output <const> = conn.output
         -- The socket is not non-blocking, so we expect a full send.
         local sbytes <const> = assert(sendfile(f:fileno(), output:fileno(), 0, 0))
         assert(sbytes == st.size)
@@ -185,8 +186,6 @@ end)
 
 server:add_route("GET", "^/ws$", function(request)
     local ws <const> = require("websocket")
-
-    log = request.server.log
 
     local connection_header <const> = request.headers["connection"]
     local upgrade_header <const> = request.headers["upgrade"]
@@ -207,7 +206,7 @@ server:add_route("GET", "^/ws$", function(request)
         ["Upgrade"] = upgrade,
         ["Sec-WebSocket-Accept"] = ws.accept(key),
     }
-    local function ws_main(output)
+    local function ws_main(conn)
         local bectl <const> = require("bectl")
         local beup <const> = require("beup")
         local kqueue <const> = require("kqueue")
@@ -266,7 +265,7 @@ server:add_route("GET", "^/ws$", function(request)
         end
 
         local function ws_send(t)
-            ws.send(output, ucl.to_json(t, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
+            ws.send(conn, ucl.to_json(t, true), ws.WS_OP_TEXT, ws.WS_FL_FIN)
         end
 
         local CMD_STATUS <const> = "status"
@@ -371,11 +370,11 @@ server:add_route("GET", "^/ws$", function(request)
             local buf = ""
             repeat
                 local payload <const>, opcode <const>, flags <const>,
-                    consumed <const> = ws.receive(io.stdin)
+                    consumed <const> = ws.receive(conn)
                 if opcode == ws.WS_OP_CLOSE then
                     break
                 elseif opcode == ws.WS_OP_PING then
-                    ws.send(output, payload, ws.WS_OP_PONG, ws.WS_FL_FIN)
+                    ws.send(conn, payload, ws.WS_OP_PONG, ws.WS_FL_FIN)
                 elseif opcode == ws.WS_OP_TEXT then
                     if payload then
                         buf = buf .. payload
@@ -386,13 +385,13 @@ server:add_route("GET", "^/ws$", function(request)
                         buf = ""
                         if not ok then
                             log:error("parser error: ", err)
-                            ws.send(output, "internal server error", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
+                            ws.send(conn, "internal server error", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
                             break
                         end
                         local msg <const> = parser:get_object()
                         if not msg.command then
                             log:error("invalid message: ", ucl.to_json({msg}))
-                            ws.send(output, "invalid request", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
+                            ws.send(conn, "invalid request", ws.WS_OP_CLOSE, ws.WS_FL_FIN)
                             break
                         end
                         local handler <const> = handlers[msg.command]
@@ -415,7 +414,7 @@ server:add_route("GET", "^/ws$", function(request)
         end)
         changelist = {
             {
-                ident = io.stdin:fileno(),
+                ident = conn.input:fileno(),
                 filter = kqueue.EVFILT_READ,
                 flags = kqueue.EV_ADD,
                 fflags = 0,

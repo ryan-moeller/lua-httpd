@@ -315,18 +315,18 @@ writes something like
 
 Handler functions receive a `request` table with the following fields:
 
-| Field      | Type               | Description                               |
-| ---------- | ------------------ | ----------------------------------------- |
-| `method`   | string             | HTTP method (e.g. `"GET"`)                |
-| `path`     | string             | URL-decoded path component                |
-| `params`   | table              | Query parameters (`key -> { values }`)    |
-| `version`  | string             | HTTP version (e.g. `"HTTP/1.1"`)          |
-| `headers`  | table              | Request headers (lowercased)              |
-| `trailers` | table              | Request trailers (if present, lowercased) |
-| `cookies`  | table              | Request cookies set by `Cookie` header    |
-| `body`     | string or function | Request body or chunk stream (if present) |
-| `matches`  | table              | Captures or match from route Lua pattern  |
-| `server`   | table              | Reference to the server object            |
+| Field        | Type               | Description                              |
+| ------------ | ------------------ | ---------------------------------------- |
+| `method`     | string             | HTTP method (e.g. `"GET"`)               |
+| `path`       | string             | URL-decoded path component               |
+| `params`     | table              | Query parameters (`key -> { values }`)   |
+| `version`    | string             | HTTP version (e.g. `"HTTP/1.1"`)         |
+| `headers`    | table              | Request headers (lowercased)             |
+| `trailers`   | table              | Request trailers (if any, lowercased)    |
+| `cookies`    | table              | Request cookies set by `Cookie` header   |
+| `body`       | string or function | Request body or chunk stream (if any)    |
+| `matches`    | table              | Captures or match from route Lua pattern |
+| `connection` | table              | Reference to the connection object       |
 
 ### Request Headers and Trailers
 
@@ -418,8 +418,6 @@ Handlers must return a response table:
 | `cookies` | table              | Optional cookies to set (`name -> value`)  |
 | `body`    | string or function | Response body or writer function           |
 
-If `body` is a function, it is called with `output` to write the response manually.
-
 To send multiple headers with the same name, set the value to a list of strings.
 Each string will be sent in order as a separate header field.
 
@@ -429,6 +427,41 @@ A Content-Length header is automatically added when `response.body` is a string.
 
 Handlers are responsible for incorporating any cookie attributes into the value
 string.
+
+If `body` is a function, it is called with a `connection` object and must write
+the response manually.  The `connection` object is described in further detail
+below.
+
+### Connection Object
+
+The connection object passed to a `body` function has the following fields of
+interest:
+
+| Field     | Type      | Description                              |
+| --------- | --------- | ---------------------------------------- |
+| `request` | table     | The request object passed to the handler |
+| `server`  | table     | Reference to the server object           |
+| `input`   | file-like | The input stream (from `server:accept`)  |
+| `output`  | file-like | The output stream (from `server:accept`) |
+
+The connection object also provides the following convenience methods:
+
+| Method                            | Description                            |
+| --------------------------------- | -------------------------------------- |
+| `:read(...)`                      | Proxy for `self.input:read(...)`       |
+| `:lines(...)`                     | Proxy for `self.input:lines(...)`      |
+| `:write(...)`                     | Proxy for `self.output:write(...)`     |
+| `:write_chunk(chunk[, exts])`     | Chunk-encode a string to `self.output` |
+| `:last_chunk([trailers[, exts]])` | End a chunk-encoded transfer           |
+
+`:write_chunk` encodes and writes a chunk (bytes) to the connection output,
+optionally with a list of extensions.
+
+`:last_chunk` writes the last-chunk to the connection output, optionally with a
+list of extensions, then writes any trailer fields, and finally writes CRLF to
+terminate the response.
+
+Chunk extensions are given as a list of strings.
 
 ### Utility Functions
 
@@ -442,14 +475,6 @@ These functions are also available from the module:
 
 * `httpd.parse_query_string(query) → table`
   Parse a URL query string into a table of key → `{ values }`.
-
-* `httpd.write_chunk(output, chunk[, exts])`
-  Encode and write a chunk (bytes), optionally with a list of extensions.  The
-  extensions are given as a list of strings.
-
-* `httpd.write_trailers(output[, trailers])`
-  Write the last chunk and optionally trailers in the same format as
-  `response.headers` to conclude the response.
 
 ## Motivation
 
