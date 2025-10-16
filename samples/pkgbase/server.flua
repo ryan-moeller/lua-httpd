@@ -61,7 +61,7 @@ local function tpl(name)
     return relpath("templates", ("%s.tpl.html"):format(name))
 end
 
-local server <const> = httpd.create_server(logfile)
+local server <const> = httpd.create_server(httpd.DEBUG, logfile)
 
 server:add_route("GET", "^/$", function(request)
     local headers <const> = {
@@ -368,6 +368,6 @@ server:add_route("GET", "^/ws$", function(request)
     return { headers=headers, status=101, reason="Switching Protocols", body=ws_main }
 end)
 
-server:run(httpd.DEBUG)
+server:run()
 
 -- vim: set et sw=4:

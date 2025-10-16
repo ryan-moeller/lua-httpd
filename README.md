@@ -30,7 +30,7 @@ server:add_route(method, pattern, handler)
 server:run()
 ```
 
-The server script is executed by some inetd-style listener.
+The server script is commonly executed by some inetd-style listener.
 
 Lua 5.3 or newer is required.  Some operating systems (FreeBSD, NetBSD) include
 a Lua interpreter as part of the base system.  On FreeBSD, it is installed as
@@ -42,7 +42,8 @@ Lua's standard libraries do not include built-in APIs for low-level socket
 management or connection handling.  Typical Unix-like operating systems include
 a socket-activation service, such as `inetd`, `launchd`, or `systemd`, to fill
 this role.  Tools like `socat` and `ncat` can also be used in simpler or more
-specialized scenarios.
+specialized scenarios.  Advanced users can provide their own custom listener
+to `server:run`.
 
 The following sections provide examples for configuring some common listeners.
 
@@ -59,11 +60,11 @@ Write an executable server script, for example:
 ```lua
 #!/usr/bin/env lua
 local httpd = require("httpd")
-local server = httpd.create_server("/var/log/httpd.log")
+local server = httpd.create_server(httpd.INFO, "/var/log/httpd.log")
 server:add_route("GET", "^/$", function(request)
     return { status=200, reason="ok", body="hello, world!" }
 end)
-server:run(httpd.INFO)
+server:run()
 ```
 
 On FreeBSD, use the shebang `#!/usr/libexec/flua` to invoke the base system's
@@ -105,11 +106,11 @@ Write a server script:
 `server.lua`
 ```lua
 local httpd = require("httpd")
-local server = httpd.create_server()
+local server = httpd.create_server(httpd.INFO)
 server:add_route("GET", "^/", function(request)
     return { status=200, reason="ok", body="hello, world!" }
 end)
-server:run(httpd.INFO)
+server:run()
 ```
 
 Start listening for connections to the server:
@@ -238,29 +239,15 @@ systemctl start server.socket
 
 ### API
 
-#### `httpd.create_server([log[, input[, output]]]) → server`
+#### `httpd.create_server([log_level[, log]]) → server`
 
 Create a new HTTP server instance.
 
+* `log_level`: Optional log output level.  `httpd.FATAL` by default.
 * `log`: Optional log path or file-like object.  `io.stderr` by default.
-* `input`: Optional input file-like object.  `io.stdin` by default.
-* `output`: Optional output file-like object.  `io.stdout` by default.
 * Returns a `server` object.
 
-#### `server:add_route(method, pattern, handler)`
-
-Register a handler for a given HTTP method and Lua pattern.
-
-* `method`: HTTP verb (e.g. `"GET"`, `"POST"`)
-* `pattern`: Lua string pattern matched against the request path
-* `handler`: Function called as `handler(request)` returning a response table
-
-#### `server:run([log_level])`
-
-Run the server.  Reads lines from `server.input` and dispatches requests to
-handlers, writing responses to `server.output`.
-
-* `log_level`: Set log output level.
+The following log levels are defined:
 
 | Level | Name          | Description                        |
 | ----- | ------------- | ---------------------------------- |
@@ -271,7 +258,27 @@ handlers, writing responses to `server.output`.
 | 5     | `httpd.DEBUG` | Detailed state information         |
 | 6     | `httpd.TRACE` | Full request logging               |
 
-The default log level is `FATAL`.
+#### `server:add_route(method, pattern, handler)`
+
+Register a handler for a given HTTP method and Lua pattern.
+
+* `method`: HTTP verb (e.g. `"GET"`, `"POST"`)
+* `pattern`: Lua string pattern matched against the request path
+* `handler`: Function called as `handler(request)` returning a response table
+
+#### `server:accept([input[, output]])`
+
+Handle an accepted connection.  Reads lines from `input` and dispatches requests
+to handlers, writing responses to `output`.
+
+* `input`: Optional input file-like object.  `io.stdin` by default.
+* `output`: Optional output file-like object.  `io.stdout` by default.
+
+#### `server:run([listener])`
+
+Run the server.  A listener provides an `:accept()` method that takes no
+parameters and returns an iterator producing `input, output` streams to pass to
+`server:accept()`.  The default listener produces `io.stdin, io.stdout` once.
 
 ### Server Object
 

@@ -51,7 +51,7 @@ local sqlite = require("lsqlite3")
 local httpd = require("httpd")
 
 -- Creating the server early allows us to use the log file in our handlers.
-local server = httpd.create_server(server_log_path)
+local server = httpd.create_server(httpd.DEBUG, server_log_path)
 
 local db, err, msg = sqlite.open(demo_db_path)
 if not db then
@@ -218,6 +218,6 @@ for _,m in ipairs({
   server:add_route(m, ".*", not_found)
 end
 
-server:run(httpd.DEBUG)
+server:run()
 
 -- vim: set et sw=2:

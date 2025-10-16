@@ -602,9 +602,9 @@ end
 --print(ucl.to_format(create_contents({headers={["content-type"]={list={"application/x-www-form-urlencoded"}}},
 --                 body="$snapshot=20231116-500bf0592cf1&name=foo"})), "yaml")
 
-local server = httpd.create_server("/var/log/jails.log")
+local server = httpd.create_server(httpd.INFO, "/var/log/jails.log")
 server:add_route("GET", "^/$", make_handler(main_contents))
 server:add_route("POST", "^/create$", make_handler(create_contents))
-server:run(httpd.INFO)
+server:run()
 
 -- vim: set et sw=4:

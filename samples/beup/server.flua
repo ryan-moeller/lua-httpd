@@ -113,7 +113,7 @@ end
 
 local theme = "darkly"
 
-local server = httpd.create_server("/var/log/beup.log")
+local server = httpd.create_server(httpd.INFO, "/var/log/beup.log")
 server:add_route("GET", "^/$", function(request)
     local body = template.process([[
 <!DOCTYPE html>
@@ -314,6 +314,6 @@ server:add_route("POST", "^/update$", function(request)
     })
     return { status=201, reason="created", body=body }
 end)
-server:run(httpd.INFO)
+server:run()
 
 -- vim: set et sw=4:

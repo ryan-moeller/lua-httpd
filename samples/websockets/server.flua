@@ -52,7 +52,7 @@ local httpd <const> = require("httpd")
 local template <const> = require("template")
 local ucl <const> = require("ucl")
 
-local server <const> = httpd.create_server(logfile)
+local server <const> = httpd.create_server(httpd.INFO, logfile)
 
 server:add_route("GET", "^/$", function(request)
     local headers <const> = {
@@ -443,6 +443,6 @@ server:add_route("GET", "^/ws$", function(request)
     return { headers=headers, status=101, reason="Switching Protocols", body=ws_main }
 end)
 
-server:run(httpd.INFO)
+server:run()
 
 -- vim: set et sw=4:

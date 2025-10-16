@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.10.4"
+M.VERSION = "0.11.0"
 
 
 -- HTTP-message = start-line
@@ -304,10 +304,8 @@ local function respond(server, response)
    if req_close or res_close then
       close_connection(server)
       -- TODO: Accommodate a persistent server with an accept loop.  For now, we
-      -- must trash the server after closing the connection.
-      if log ~= io.stderr then
-         log:close()
-      end
+      -- must trash the server after closing the connection.  Fix this with a
+      -- per-connection state rather than per-server.
       return ServerState.CLOSED
    else
       server.output:flush()
@@ -1491,7 +1489,7 @@ end
 
 
 -- Wrap a log file to add convenience methods.
-local function logger(log)
+local function logger(log, log_level)
    local log = type(log) == "string" and io.open(log, "a") or log
    if log.setvbuf then
       log:setvbuf("no")
@@ -1530,19 +1528,28 @@ local function logger(log)
          end
       end
    end
-   return setmetatable({level=M.FATAL}, {__index=methods})
+   return setmetatable({level=log_level}, {__index=methods})
 end
 
 
 M.default_max_chunk_size = 16 << 20 -- 16 MiB should be enough for anyone.
 
 
-function M.create_server(log, input, output)
+local stdio_listener = {}
+function stdio_listener:accept()
+   local consumed = false
+   return function()
+      if not consumed then
+         consumed = true
+         return io.stdin, io.stdout
+      end
+   end
+end
+
+
+function M.create_server(log_level, log)
    local server = {
-      state = ServerState.START_LINE,
-      log = logger(log or io.stderr),
-      input = input or io.stdin,
-      output = output or io.stdout,
+      log = logger(log or io.stderr, log_level or M.FATAL),
       max_chunk_size = M.default_max_chunk_size,
       -- handlers is a map of method => { location, location, ... }
       -- locations are matched in the order given, first match wins
@@ -1558,11 +1565,20 @@ function M.create_server(log, input, output)
       self.handlers[method] = handlers
    end
 
-   function server:run(log_level)
-      self.log.level = log_level
+   function server:accept(input, output)
+      -- TODO: these fields should become a connection object
+      self.state = ServerState.START_LINE
+      self.input = input or io.stdin
+      self.output = output or io.stdout
       for line in self.input:lines() do
          self.log:trace(">C ", line)
          self.state = handle_request_line(self, line)
+      end
+   end
+
+   function server:run(listener)
+      for input, output in (listener or stdio_listener):accept() do
+         self:accept(input, output)
       end
    end
 

@@ -103,8 +103,8 @@ local function monitor(request)
 end
 --print(monitor({}))
 
-local server = httpd.create_server("/var/log/mon.log")
+local server = httpd.create_server(httpd.INFO, "/var/log/mon.log")
 server:add_route("GET", "^/$", monitor)
-server:run(httpd.INFO)
+server:run()
 
 -- vim: set et sw=4:
