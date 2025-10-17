@@ -29,6 +29,7 @@ local ConnectionState = {
 
 
 local Connection = {}
+Connection.__index = Connection
 
 
 function Connection:read(...)
@@ -116,6 +117,7 @@ end
 
 
 local ResponseField = {}
+ResponseField.__index = ResponseField
 
 
 function ResponseField:contains_value(search_value)
@@ -127,9 +129,6 @@ function ResponseField:contains_value(search_value)
    end
    return false
 end
-
-
-ResponseField.__index = ResponseField
 
 
 -- Add some convenience metamethods to a collection of response fields.
@@ -1130,6 +1129,17 @@ end
 
 
 local RequestField = {}
+function RequestField:__index(key)
+   if key ~= "raw" and key ~= "elements" then
+      return RequestField[key]
+   end
+   self.raw = {} -- list of all raw (but validated) field values
+   self.elements = {} -- list of structured elements
+   for _, value in ipairs(self.unvalidated) do
+      parse_field_value(self, value)
+   end
+   return self[key]
+end
 
 
 function RequestField:concat(...)
@@ -1159,19 +1169,6 @@ end
 
 
 -- TODO: add some more convenience methods
-
-
-function RequestField:__index(key)
-   if key ~= "raw" and key ~= "elements" then
-      return RequestField[key]
-   end
-   self.raw = {} -- list of all raw (but validated) field values
-   self.elements = {} -- list of structured elements
-   for _, value in ipairs(self.unvalidated) do
-      parse_field_value(self, value)
-   end
-   return self[key]
-end
 
 
 local function new_request_field()
@@ -1559,9 +1556,6 @@ function Connection:handle_request_line(line)
 end
 
 
-Connection.__index = Connection
-
-
 -- Define the set of log levels.
 local log_levels = {"FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"}
 for i, level in ipairs(log_levels) do
@@ -1592,6 +1586,7 @@ local function logger(log_level, log, id)
          :format(timestamp, id, label or "(server)", level, msg))
    end
    local Logger = {}
+   Logger.__index = Logger
    function Logger.close()
       if log.close then
          return log:close()
@@ -1604,7 +1599,6 @@ local function logger(log_level, log, id)
          end
       end
    end
-   Logger.__index = Logger
    return setmetatable({level=log_level}, Logger)
 end
 
@@ -1627,6 +1621,7 @@ end
 
 
 local Server = {}
+Server.__index = Server
 
 
 function Server:add_route(method, pattern, handler)
@@ -1657,9 +1652,6 @@ function Server:run(listener)
       self:accept(input, output, label)
    end
 end
-
-
-Server.__index = Server
 
 
 local function getpid()
