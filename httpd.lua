@@ -129,7 +129,7 @@ function ResponseField:contains_value(search_value)
 end
 
 
-local response_field_metatable = {__index=ResponseField}
+ResponseField.__index = ResponseField
 
 
 -- Add some convenience metamethods to a collection of response fields.
@@ -148,7 +148,7 @@ local function wrap_response_fields(fields)
                end
                -- Add some convenience methods to the field, and return its
                -- original name.
-               return setmetatable(field, response_field_metatable), name
+               return setmetatable(field, ResponseField), name
             end
          end
       end,
@@ -1161,23 +1161,21 @@ end
 -- TODO: add some more convenience methods
 
 
-local request_field_metatable = {
-   __index = function(field, key)
-      if key ~= "raw" and key ~= "elements" then
-         return RequestField[key]
-      end
-      field.raw = {} -- list of all raw (but validated) field values
-      field.elements = {} -- list of structured elements
-      for _, value in ipairs(field.unvalidated) do
-         parse_field_value(field, value)
-      end
-      return field[key]
-   end,
-}
+function RequestField:__index(key)
+   if key ~= "raw" and key ~= "elements" then
+      return RequestField[key]
+   end
+   self.raw = {} -- list of all raw (but validated) field values
+   self.elements = {} -- list of structured elements
+   for _, value in ipairs(self.unvalidated) do
+      parse_field_value(self, value)
+   end
+   return self[key]
+end
 
 
 local function new_request_field()
-   return setmetatable({unvalidated={}}, request_field_metatable)
+   return setmetatable({unvalidated={}}, RequestField)
 end
 
 
@@ -1561,6 +1559,9 @@ function Connection:handle_request_line(line)
 end
 
 
+Connection.__index = Connection
+
+
 -- Define the set of log levels.
 local log_levels = {"FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"}
 for i, level in ipairs(log_levels) do
@@ -1590,20 +1591,21 @@ local function logger(log_level, log, id)
       return log:write(("%s %s %s %s: %s\n")
          :format(timestamp, id, label or "(server)", level, msg))
    end
-   local methods = {}
-   function methods.close()
+   local Logger = {}
+   function Logger.close()
       if log.close then
          return log:close()
       end
    end
    for i, level in ipairs(log_levels) do
-      methods[level:lower()] = function(self, ...)
+      Logger[level:lower()] = function(self, ...)
          if self.level >= i then
             return write(self.label, level, ...)
          end
       end
    end
-   return setmetatable({level=log_level}, {__index=methods})
+   Logger.__index = Logger
+   return setmetatable({level=log_level}, Logger)
 end
 
 
@@ -1624,9 +1626,6 @@ function StdioListener:accept()
 end
 
 
-local connection_metatable = {__index=Connection}
-
-
 local Server = {}
 
 
@@ -1643,7 +1642,7 @@ function Server:accept(input, output, label)
       input = input or io.stdin,
       output = output or io.stdout,
       server = self,
-   }, connection_metatable)
+   }, Connection)
    self.log.label = label or "(client)"
    for line in connection:lines() do
       self.log:trace(">C ", line)
@@ -1660,7 +1659,7 @@ function Server:run(listener)
 end
 
 
-local server_metatable = {__index=Server}
+Server.__index = Server
 
 
 local function getpid()
@@ -1681,7 +1680,7 @@ function M.create_server(log_level, log, id)
       -- pattern is a Lua pattern for string matching the path
       -- handler is a function(request) returning a response table
       handlers = {},
-   }, server_metatable)
+   }, Server)
 end
 
 
