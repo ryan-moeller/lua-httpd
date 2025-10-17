@@ -239,12 +239,13 @@ systemctl start server.socket
 
 ### API
 
-#### `httpd.create_server([log_level[, log]]) → server`
+#### `httpd.create_server([log_level[, log[, id]]]) → server`
 
 Create a new HTTP server instance.
 
 * `log_level`: Optional log output level.  `httpd.FATAL` by default.
 * `log`: Optional log path or file-like object.  `io.stderr` by default.
+* `id`: Optional identifier for log messages.  PID of the server by default.
 * Returns a `server` object.
 
 The following log levels are defined:
@@ -266,19 +267,22 @@ Register a handler for a given HTTP method and Lua pattern.
 * `pattern`: Lua string pattern matched against the request path
 * `handler`: Function called as `handler(request)` returning a response table
 
-#### `server:accept([input[, output]])`
+#### `server:accept([input[, output[, label]]])`
 
 Handle an accepted connection.  Reads lines from `input` and dispatches requests
 to handlers, writing responses to `output`.
 
 * `input`: Optional input file-like object.  `io.stdin` by default.
 * `output`: Optional output file-like object.  `io.stdout` by default.
+* `label`: Optional client label string.  `"(client)"` by default.
 
 #### `server:run([listener])`
 
 Run the server.  A listener provides an `:accept()` method that takes no
-parameters and returns an iterator producing `input, output` streams to pass to
-`server:accept()`.  The default listener produces `io.stdin, io.stdout` once.
+parameters and returns an iterator producing `input, output, label`, to pass to
+`server:accept()`, where `input` and `output` are file-like streams and `label`
+is a string to identify the client.  The default listener produces
+`io.stdin, io.stdout, "(stdio)"` once.
 
 ### Server Object
 
@@ -296,8 +300,8 @@ with the methods for writing lines to the log:
 Each method takes any number of parameters.  If `server.log.level` is at least
 as severe, it converts the parameters to strings with `tostring`, concatenates
 them with `table.concat`, and writes a line to the log file.  Each line begins
-with a timestamp, process identifier, and log level, followed by the joined
-parameters, and ending with a newline.
+with a timestamp, process identifier, context label, and log level, followed by
+the joined parameters, and ending with a newline.
 
 For example:
 
@@ -308,8 +312,11 @@ log:trace("number=", 13)
 writes something like
 
 ```
-2025-10-12T15:42:05Z 16811 TRACE: number=13
+2025-10-12T15:42:05Z 16811 (stdio) TRACE: number=13
 ```
+
+The context label is stored in `log.label` while servicing a client connection.
+It is simply a string used to label log messages.
 
 ### Request Object
 

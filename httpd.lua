@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.12.1"
+M.VERSION = "0.13.0"
 
 
 -- HTTP-message = start-line
@@ -1569,20 +1569,14 @@ end
 
 
 -- Wrap a log file to add convenience methods.
-local function logger(log, log_level)
+local function logger(log_level, log, id)
    local log = type(log) == "string" and io.open(log, "a") or log
    if log.setvbuf then
       log:setvbuf("no")
    end
-   local pid = (function()
-      local f = assert(io.popen("echo $PPID"))
-      local pid = f:read("*l")
-      f:close()
-      return pid
-   end)()
    local timestamp = ""
    local time = 0
-   local function write(level, ...)
+   local function write(label, level, ...)
       local now = os.time()
       if time ~= now then
          timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ", now)
@@ -1593,8 +1587,8 @@ local function logger(log, log_level)
          values[i] = tostring(value)
       end
       local msg = table.concat(values)
-      -- It may be worth showing a connection tag (%p is probably fine) someday.
-      return log:write(("%s %s %s: %s\n"):format(timestamp, pid, level, msg))
+      return log:write(("%s %s %s %s: %s\n")
+         :format(timestamp, id, label or "(server)", level, msg))
    end
    local methods = {}
    function methods.close()
@@ -1605,7 +1599,7 @@ local function logger(log, log_level)
    for i, level in ipairs(log_levels) do
       methods[level:lower()] = function(self, ...)
          if self.level >= i then
-            return write(level, ...)
+            return write(self.label, level, ...)
          end
       end
    end
@@ -1624,7 +1618,7 @@ function StdioListener:accept()
    return function()
       if not consumed then
          consumed = true
-         return io.stdin, io.stdout
+         return io.stdin, io.stdout, "(stdio)"
       end
    end
 end
@@ -1643,23 +1637,25 @@ function Server:add_route(method, pattern, handler)
 end
 
 
-function Server:accept(input, output)
+function Server:accept(input, output, label)
    local connection = setmetatable({
       state = ConnectionState.START_LINE,
       input = input or io.stdin,
       output = output or io.stdout,
       server = self,
    }, connection_metatable)
+   self.log.label = label or "(client)"
    for line in connection:lines() do
       self.log:trace(">C ", line)
       connection.state = connection:handle_request_line(line)
    end
+   self.log.label = nil
 end
 
 
 function Server:run(listener)
-   for input, output in (listener or StdioListener):accept() do
-      self:accept(input, output)
+   for input, output, label in (listener or StdioListener):accept() do
+      self:accept(input, output, label)
    end
 end
 
@@ -1667,9 +1663,17 @@ end
 local server_metatable = {__index=Server}
 
 
-function M.create_server(log_level, log)
+local function getpid()
+   local f = assert(io.popen("echo $PPID"))
+   local pid = f:read("*l")
+   f:close()
+   return pid
+end
+
+
+function M.create_server(log_level, log, id)
    return setmetatable({
-      log = logger(log or io.stderr, log_level or M.FATAL),
+      log = logger(log_level or M.FATAL, log or io.stderr, id or getpid()),
       max_chunk_size = M.default_max_chunk_size,
       -- handlers is a map of method => { location, location, ... }
       -- locations are matched in the order given, first match wins
