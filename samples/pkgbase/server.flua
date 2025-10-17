@@ -351,18 +351,22 @@ server:add_route("GET", "^/ws$", function(request)
         while coroutine.status(ws_thread) ~= "dead" do
             local event <const> = assert(kq:kevent(changelist))
             changelist = nil
-            local ok <const>, err <const>, code <const> =
-                coroutine.resume(event.udata, event)
+            local thread <const> = event.udata
+            local ok <const>, err <const> = coroutine.resume(thread, event)
             if not ok then
-                log:error(err, code and (" (%d)"):format(code))
+                log:error(err)
                 log:debug(ucl.to_json(event))
             end
+            if coroutine.status(thread) == "dead" then
+                coroutine.close(thread)
+            end
         end
+        for thread in pairs(threads) do
+            coroutine.close(thread)
+        end
+        coroutine.close(ws_thread)
         log:trace("websocket closed")
         kq:close()
-        for thread in pairs(threads) do
-            assert(coroutine.close(thread))
-        end
     end
     log:trace("switching connection to websocket protocol")
     return { headers=headers, status=101, reason="Switching Protocols", body=ws_main }
