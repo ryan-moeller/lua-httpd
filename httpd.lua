@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.12.0"
+M.VERSION = "0.12.1"
 
 
 -- HTTP-message = start-line
@@ -115,20 +115,21 @@ function Connection:last_chunk(trailers, exts)
 end
 
 
-local response_field_methods = {
-   contains_value = function(field, search_value)
-      for _, value in ipairs(field) do
-         -- XXX: doesn't handle params. parse response fields?
-         if value == search_value then
-            return true
-         end
+local ResponseField = {}
+
+
+function ResponseField:contains_value(search_value)
+   for _, value in ipairs(self) do
+      -- XXX: doesn't handle params. parse response fields?
+      if value == search_value then
+         return true
       end
-      return false
-   end,
-}
+   end
+   return false
+end
 
 
-local response_field_metatable = {__index=response_field_methods}
+local response_field_metatable = {__index=ResponseField}
 
 
 -- Add some convenience metamethods to a collection of response fields.
@@ -1128,38 +1129,42 @@ local function parse_field_value(field, value)
 end
 
 
-local field_methods = {
-   concat = function(field, ...)
-      return table.concat(field.raw, ...)
-   end,
+local RequestField = {}
 
-   contains_value = function(field, value)
-      for _, element in ipairs(field.elements) do
-         if element.value == value then
-            return true
-         end
+
+function RequestField:concat(...)
+   return table.concat(self.raw, ...)
+end
+
+
+function RequestField:contains_value(value)
+   for _, element in ipairs(self.elements) do
+      if element.value == value then
+         return true
       end
-      return false
-   end,
+   end
+   return false
+end
 
-   find_elements = function(field, value)
-      local matches = {}
-      for _, element in ipairs(field.elements) do
-         if element.value == value then
-            table.insert(matches, element)
-         end
+
+function RequestField:find_elements(value)
+   local matches = {}
+   for _, element in ipairs(self.elements) do
+      if element.value == value then
+         table.insert(matches, element)
       end
-      return matches
-   end,
-
-   -- TODO: add some more convenience methods
-}
+   end
+   return matches
+end
 
 
-local field_metatable = {
+-- TODO: add some more convenience methods
+
+
+local request_field_metatable = {
    __index = function(field, key)
       if key ~= "raw" and key ~= "elements" then
-         return field_methods[key]
+         return RequestField[key]
       end
       field.raw = {} -- list of all raw (but validated) field values
       field.elements = {} -- list of structured elements
@@ -1171,8 +1176,8 @@ local field_metatable = {
 }
 
 
-local function new_field()
-   return setmetatable({unvalidated={}}, field_metatable)
+local function new_request_field()
+   return setmetatable({unvalidated={}}, request_field_metatable)
 end
 
 
@@ -1196,7 +1201,7 @@ local values = {
 local ucl = require("ucl")
 for _, value in ipairs(values) do
    print("field value: ", value)
-   local field = new_field()
+   local field = new_request_field()
    table.insert(field.unvalidated, value)
    -- Note if tracing is added to parse_field_value() that it is invoked once
    -- for `raw` but not again for `elements`, because the result is memoized.
@@ -1214,7 +1219,7 @@ local function update_fields(fields, name, value)
    --
    -- TODO: Validation/parsing for all fields could be forced by a server
    -- configuration parameter.
-   local field = fields[name] or new_field()
+   local field = fields[name] or new_request_field()
    table.insert(field.unvalidated, value)
    fields[name] = field
 end
@@ -1588,6 +1593,7 @@ local function logger(log, log_level)
          values[i] = tostring(value)
       end
       local msg = table.concat(values)
+      -- It may be worth showing a connection tag (%p is probably fine) someday.
       return log:write(("%s %s %s: %s\n"):format(timestamp, pid, level, msg))
    end
    local methods = {}
@@ -1610,8 +1616,10 @@ end
 M.default_max_chunk_size = 16 << 20 -- 16 MiB should be enough for anyone.
 
 
-local stdio_listener = {}
-function stdio_listener:accept()
+local StdioListener = {}
+
+
+function StdioListener:accept()
    local consumed = false
    return function()
       if not consumed then
@@ -1625,8 +1633,42 @@ end
 local connection_metatable = {__index=Connection}
 
 
+local Server = {}
+
+
+function Server:add_route(method, pattern, handler)
+   local handlers = self.handlers[method] or {}
+   table.insert(handlers, { pattern, handler })
+   self.handlers[method] = handlers
+end
+
+
+function Server:accept(input, output)
+   local connection = setmetatable({
+      state = ConnectionState.START_LINE,
+      input = input or io.stdin,
+      output = output or io.stdout,
+      server = self,
+   }, connection_metatable)
+   for line in connection:lines() do
+      self.log:trace(">C ", line)
+      connection.state = connection:handle_request_line(line)
+   end
+end
+
+
+function Server:run(listener)
+   for input, output in (listener or StdioListener):accept() do
+      self:accept(input, output)
+   end
+end
+
+
+local server_metatable = {__index=Server}
+
+
 function M.create_server(log_level, log)
-   local server = {
+   return setmetatable({
       log = logger(log or io.stderr, log_level or M.FATAL),
       max_chunk_size = M.default_max_chunk_size,
       -- handlers is a map of method => { location, location, ... }
@@ -1635,34 +1677,7 @@ function M.create_server(log_level, log)
       -- pattern is a Lua pattern for string matching the path
       -- handler is a function(request) returning a response table
       handlers = {},
-   }
-
-   function server:add_route(method, pattern, handler)
-      local handlers = self.handlers[method] or {}
-      table.insert(handlers, { pattern, handler })
-      self.handlers[method] = handlers
-   end
-
-   function server:accept(input, output)
-      local connection = setmetatable({
-         state = ConnectionState.START_LINE,
-         input = input or io.stdin,
-         output = output or io.stdout,
-         server = server,
-      }, connection_metatable)
-      for line in connection:lines() do
-         self.log:trace(">C ", line)
-         connection.state = connection:handle_request_line(line)
-      end
-   end
-
-   function server:run(listener)
-      for input, output in (listener or stdio_listener):accept() do
-         self:accept(input, output)
-      end
-   end
-
-   return server
+   }, server_metatable)
 end
 
 
