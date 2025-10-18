@@ -174,13 +174,7 @@ server:add_route("GET", "^/ws$", function(request)
                         event = coroutine.yield()
                     end
                 until eof
-                -- kqueue(2):
-                --   Events which are attached to file descriptors are
-                --   automatically deleted on the last close of the
-                --   descriptor.
                 assert(posix.unistd.close(pipe))
-                -- Now it is safe to trash the thread.
-                threads[coroutine.running()] = nil
                 local _, exit_type <const>, exit_code <const> =
                     assert(posix.sys.wait.wait(pid))
                 if onexit then
@@ -190,15 +184,11 @@ server:add_route("GET", "^/ws$", function(request)
             -- Save the thread in a scope that survives the kqueue.
             threads[thread] = true
             -- Add the event to the kqueue.
-            if not changelist then
-                changelist = {}
-            end
+            changelist = changelist or {}
             table.insert(changelist, {
                 ident = pipe,
                 filter = kqueue.EVFILT_READ,
                 flags = kqueue.EV_ADD,
-                fflags = 0,
-                data = 0,
                 udata = thread
             })
         end
@@ -343,8 +333,6 @@ server:add_route("GET", "^/ws$", function(request)
                 ident = conn.input:fileno(),
                 filter = kqueue.EVFILT_READ,
                 flags = kqueue.EV_ADD,
-                fflags = 0,
-                data = 0,
                 udata = ws_thread
             }
         }
@@ -352,13 +340,28 @@ server:add_route("GET", "^/ws$", function(request)
             local event <const> = assert(kq:kevent(changelist))
             changelist = nil
             local thread <const> = event.udata
-            local ok <const>, err <const> = coroutine.resume(thread, event)
-            if not ok then
-                log:error(err)
-                log:debug(ucl.to_json(event))
-            end
-            if coroutine.status(thread) == "dead" then
-                coroutine.close(thread)
+            if thread then
+                if (event.flags & kqueue.EV_ERROR) ~= 0 then
+                    log:error("event error:", event.data)
+                    log:debug(ucl.to_json(event))
+                else
+                    local ok <const>, err <const> =
+                        coroutine.resume(thread, event)
+                    if not ok then
+                        log:error(err)
+                        log:debug(ucl.to_json(event))
+                    end
+                end
+                if coroutine.status(thread) == "dead" then
+                    -- Delete the event for this thread.
+                    event.flags = kqueue.EV_DELETE
+                    event.udata = nil
+                    changelist = changelist or {}
+                    table.insert(changelist, event)
+                    -- Now it is safe to GC the thread.
+                    threads[thread] = nil
+                    coroutine.close(thread)
+                end
             end
         end
         for thread in pairs(threads) do
