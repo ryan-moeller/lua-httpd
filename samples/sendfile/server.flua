@@ -1,0 +1,237 @@
+#!/usr/libexec/flua
+--
+-- Copyright (c) 2025 Ryan Moeller
+--
+-- SPDX-License-Identifier: ISC
+--
+
+--
+-- Use with socat:
+-- socat TCP-LISTEN:8888,reuseaddr,fork EXEC:"/path/to/lua-httpd/samples/sendfile/server.flua [rootdir]"
+--
+
+local lfs <const> = require("lfs")
+local posix <const> = require("posix")
+
+local basedir <const> = posix.libgen.dirname(arg[0])
+local rootdir <const> = posix.stdlib.realpath(arg[1] or ".")
+
+local function path(...)
+    return table.concat(table.pack(...), "/")
+end
+
+local function relpath(...)
+    return path(basedir, ...)
+end
+
+package.path = table.concat({
+    relpath("../../?.lua"),             -- httpd.lua
+    relpath("../contrib/?.lua"),        -- samples/contrib/template.lua
+    package.path
+}, ";")
+
+local httpd <const> = require("httpd")
+local template <const> = require("template")
+
+--local ucl <const> = require("ucl") -- useful for debugging
+require("fileno")
+local magic <const> = require("magic")
+local sendfile <const> = require("sendfile")
+
+local server <const> = httpd.create_server(httpd.INFO, logfile)
+local log <const> = server.log
+
+server:add_route("GET", ".*", function(request)
+    local p <const>, err <const>, code <const> =
+        posix.stdlib.realpath(path(rootdir, request.path))
+    if not p or p:sub(1, #rootdir) ~= rootdir then
+        if not p then
+            log:debug(("realpath failed: path=%q err=%q code=%d")
+                :format(request.path, err, code))
+        else
+            log:debug(("path %q escapes rootdir"):format(p))
+        end
+        -- TODO: nicer error pages
+        return {status=404, reason="Not Found", body="not found"}
+    end
+    local st <const>, err <const>, code <const> = lfs.attributes(p)
+    if not st then
+        log:debug(("attributes failed: p=%q err=%q code=%d")
+            :format(p, err, code))
+        return {status=404, reason="Not Found", body="not found"}
+    end
+    if st.mode == "directory" then
+        local directory <const> = request.path ..
+            (request.path:sub(-1) == "/" and "" or "/")
+        local entries <const> = {}
+        local dir <const> = {lfs.dir(p)}
+        if not dir[1] then
+            -- lfs.dir() returns nil if opendir(3) fails, e.g. with EACCES.
+            -- It does not return errno though, so we can only guess why.
+            log:debug(("lfs.dir(%q) failed"):format(p));
+            return {status=403, reason="Forbidden", body="permission denied"}
+        end
+        for name in table.unpack(dir) do
+            if name:sub(1, 1) == "." and name ~= ".." then
+                log:debug(("skipping entry %q: hidden name"):format(name))
+                goto continue
+            end
+            -- Add entries for accessible regular files and directories.
+            -- Everything else is silently omitted.
+            local p1 <const>, err <const>, code <const> =
+                posix.stdlib.realpath(path(p, name))
+            if not p1 then
+                log:debug(("realpath failed: p=%q name=%q err=%q code=%d")
+                    :format(p, name, err, code))
+                goto continue
+            end
+            if p1:sub(1, #rootdir) ~= rootdir then
+                log:debug(("entry %q escapes rootdir"):format(name))
+                goto continue
+            end
+            local st <const>, err <const>, code <const> = lfs.attributes(p1)
+            if not st then
+                log:debug(("attributes failed: p1=%q err=%q code=%d")
+                    :format(p1, err, code))
+                goto continue
+            end
+            if st.mode ~= "directory" and st.mode ~= "file" then
+                log:debug(("skipping entry %q: not a directory or file")
+                    :format(name))
+                goto continue
+            end
+            st.name = name
+            if st.mode == "directory" then
+                st.name = st.name .. "/"
+                st.size = "-"
+            end
+            table.insert(entries, st)
+            ::continue::
+        end
+        table.sort(entries, function(a, b)
+            -- Sort so that ".." is always first, followed by directories, then
+            -- files, locale-ascending.
+            if a.name == ".." then
+                return true
+            end
+            if a.mode == "directory" and b.mode == "file" then
+                return true
+            end
+            if a.mode == "file" and b.mode == "directory" then
+                return false
+            end
+            return a.name < b.name
+        end)
+        local headers <const> = {
+            ["Content-Type"] = "text/html; charset=utf-8",
+            ["X-Content-Type-Options"] = "nosniff",
+            --["Connection"] = "close",
+        }
+        local body <const> = template.process([[
+          <!DOCTYPE html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <title>Static File Browser</title>
+              <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
+              <style>
+                :root{
+                    --bulma-link-h: 0deg;
+                    --bulma-link-l: 30%;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="columns is-centered">
+                <div class="column">
+                  <section class="section">
+                    <h1 class="title">Static File Browser</h1>
+                    <h2 class="subtitle">Index of {{directory}}</h2>
+                    <table class="table is-striped is-fullwidth">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th class="has-text-right">Size</th>
+                          <th class="has-text-right">Modified</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {%
+                        for _, entry in ipairs(entries) do
+                            local href <const> = directory .. entry.name
+                            local modified <const> =
+                                os.date("!%Y-%m-%d %H:%M:%S", entry.modification)
+                            if entry.name == "../" then
+                                entry.name = "Parent directory/"
+                            end
+                        %}
+                        <tr>
+                          <td><a href="{{href}}">{{entry.name}}</a></td>
+                          <td class="has-text-right">{{entry.size}}</td>
+                          <td class="has-text-right">{{modified}}</td>
+                        </tr>
+                        {% end %}
+                      </tbody>
+                    </table>
+                  </section>
+                </div>
+              </div>
+            </body>
+          </html>
+        ]], {directory=directory, entries=entries})
+        return {status=200, reason="OK", headers=headers, body=body}
+    end
+    if st.mode ~= "file" then
+        log:debug("request forbidden")
+        return {status=403, reason="Forbidden", body="permission denied"}
+    end
+    local ims_header <const> = request.headers["if-modified-since"]
+    if ims_header then
+        local ims <const> = httpd.parse_date(ims_header:concat())
+        if not ims then
+            return {status=400, reason="Bad Request", body="bad request"}
+        end
+        if os.difftime(st.modification, ims) <= 0 then
+            local headers <const> = {
+                -- Might be useful.
+                ["Last-Modified"] = httpd.format_date(st.modification),
+            }
+            return {status=304, reason="Not Modified", headers=headers}
+        end
+    end
+    local f <const>, err <const>, code <const> = io.open(p, "r")
+    if not f then
+        log:error(("open failed: %s (%d)"):format(err, code))
+        if code == 1 then -- EPERM
+            return {status=403, reason="Forbidden", body="permission denied"}
+        elseif code == 2 then -- ENOENT
+            return {status=404, reason="Not Found", body="not found"}
+        else
+            return {
+                status=500, reason="Internal Server Error",
+                body="internal server error"
+            }
+        end
+    end
+    local m <close> = assert(magic.open(magic.MIME))
+    assert(m:load())
+    local headers <const> = {
+        ["Content-Length"] = st.size,
+        ["Content-Type"] = assert(m:descriptor(f)),
+        ["X-Content-Type-Options"] = "nosniff",
+        ["Last-Modified"] = httpd.format_date(st.modification),
+    }
+    local function body(conn)
+        local output <const> = conn.output
+        -- The socket is not non-blocking, so we expect a full send.
+        local sbytes <const> = assert(sendfile(f:fileno(), output:fileno(), 0, 0))
+        assert(sbytes == st.size)
+        f:close()
+    end
+    return {status=200, reason="OK", headers=headers, body=body}
+end)
+
+server:run()
+
+-- vim: set et sw=4:
