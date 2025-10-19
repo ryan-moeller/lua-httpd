@@ -483,6 +483,13 @@ These functions are also available from the module:
 * `httpd.parse_query_string(query) → table`
   Parse a URL query string into a table of key → `{ values }`.
 
+* `httpd.format_date([time]) -> string`
+  Format an HTTP Date string using `os.date()` with the appropriate format.
+
+* `httpd.parse_date(str) -> number`
+  Parse an HTTP Date string into a time using `os.time()` with the appropriate
+  parts of `str`.
+
 ## Motivation
 
 I didn't feel like cross-compiling a bunch of stuff for a MIPS router.

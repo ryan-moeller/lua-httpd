@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.13.0"
+M.VERSION = "0.14.0"
 
 
 -- HTTP-message = start-line
@@ -165,6 +165,11 @@ local function wrap_response_fields(fields)
 end
 
 
+local function format_date(ts)
+   return os.date("!%a, %d %b %Y %H:%M:%S GMT", ts)
+end
+
+
 -- example response table:
 -- { status=404, reason="Not Found", headers={}, cookies={},
 --   body="404 Not Found" }
@@ -190,7 +195,7 @@ function Connection:write_http_response(response)
    -- MUST generate a Date header field in certain cases (RFC 9110 §6.6.1)
    -- Doesn't hurt to always send one.
    if not headers["Date"] then
-      headers["Date"] = os.date("!%a, %d %b %Y %H:%M:%S GMT")
+      headers["Date"] = format_date()
    end
 
    -- MUST NOT send Content-Length with any Informational or No Content
@@ -1679,6 +1684,35 @@ end
 M.parse_query_string = parse_request_query
 M.percent_decode = decode
 M.percent_encode = encode
+M.format_date = format_date
+
+
+local months = {
+   Jan = 1, Feb = 2, Mar = 3, Apr = 4, May = 5, Jun = 6,
+   Jul = 7, Aug = 8, Sep = 9, Oct = 10, Nov = 11, Dec = 12,
+}
+
+
+function M.parse_date(s)
+   local day, month, year, hour, min, sec =
+      s:match("^%a+, (%d%d) (%a+) (%d%d%d%d) (%d%d):(%d%d):(%d%d) GMT$")
+   if not day then
+      return nil, "invalid date"
+   end
+   local month_num = months[month]
+   if not month_num then
+      return nil, "invalid date"
+   end
+   return os.time({
+      year = year,
+      month = month_num,
+      day = day,
+      hour = hour,
+      min = min,
+      sec = sec,
+      isdst = false, -- UTC
+   })
+end
 
 
 return M
