@@ -175,10 +175,8 @@ server:add_route("GET", "^/scripts/[^/]+%.js$", function(request)
         end
     end
     local function body(conn)
-        local output <const> = conn.output
         -- The socket is not non-blocking, so we expect a full send.
-        local sbytes <const> = assert(sendfile(f:fileno(), output:fileno(), 0, 0))
-        assert(sbytes == st.size)
+        assert(sendfile(f, conn.output, 0, 0) == st.size)
         f:close()
     end
     return { headers=headers, status=200, reason="ok", body=body }
