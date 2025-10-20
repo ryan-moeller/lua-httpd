@@ -221,12 +221,62 @@ server:add_route("GET", ".*", function(request)
         ["X-Content-Type-Options"] = "nosniff",
         ["Last-Modified"] = httpd.format_date(st.modification),
     }
+    local send <const> = {offset=0, nbytes=0, resid=st.size}
+    local range_header <const> = request.headers["range"]
+    if range_header then
+        local ranges = httpd.parse_ranges(range_header:concat())
+        if ranges then
+            local unsatisfied <const> =
+                httpd.format_range("bytes", nil, nil, st.size)
+            local unsatisfied <const> = {
+                status=416, reason="Range Not Satisfiable",
+                headers={["Content-Range"]=unsatisfied},
+                body="range not satisfiable",
+            }
+            -- We can only reliably respond to a single range without having to
+            -- read the whole file to generate a suitable boundary.
+            local range <const> = ranges[1]
+            if range.unit ~= "bytes" then
+                f:close()
+                return unsatisfied
+            end
+            if range.suffix then
+                if range.suffix > st.size then
+                    range.first = 0
+                else
+                    range.first = st.size - range.suffix
+                end
+            end
+            if not range.first or range.first >= st.size then
+                f:close()
+                return unsatisfied
+            end
+            send.offset = range.first
+            if not range.last or range.last >= st.size then
+                range.last = st.size - 1
+            end
+            local length <const> = (range.last + 1) - range.first
+            assert(length > 0)
+            if length < st.size then
+                send.nbytes = length
+                headers["Content-Length"] = length
+                headers["Content-Range"] = httpd.format_range("bytes",
+                    range.first, range.last, st.size)
+            else
+                assert(send.offset == 0);
+            end
+            send.resid = length
+        end
+    end
+    local partial <const> = send.offset + send.nbytes > 0
+    local status <const> = partial and 206 or 200
+    local reason <const> = partial and "Partial Content" or "OK"
     local function body(conn)
         -- The socket is not non-blocking, so we expect a full send.
-        assert(sendfile(f, conn.output, 0, 0) == st.size)
+        assert(sendfile(f, conn.output, send.offset, send.nbytes) == send.resid)
         f:close()
     end
-    return {status=200, reason="OK", headers=headers, body=body}
+    return {status=status, reason=reason, headers=headers, body=body}
 end)
 
 server:run()
