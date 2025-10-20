@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.14.0"
+M.VERSION = "0.15.0"
 
 
 -- HTTP-message = start-line
@@ -1713,6 +1713,99 @@ function M.parse_date(s)
       isdst = false, -- UTC
    })
 end
+
+
+-- References: RFC 9110 §14.1.1, §14.4
+function M.format_range(unit, first, last, complete)
+   if not first and not last then
+      return ("%s */%d"):format(unit, complete)
+   end
+   return ("%s %d-%s/%s"):format(unit, first, last, complete or "*")
+end
+
+
+--[[ TESTS
+assert(M.format_range("bytes", 42, 1233, 1234) == "bytes 42-1233/1234")
+assert(M.format_range("bytes", 42, 1233) == "bytes 42-1233/*")
+assert(M.format_range("bytes", nil, nil, 1234) == "bytes */1234")
+--]]
+
+
+-- References: RFC 9110 §14.1, §14.1.1, §14.2
+function M.parse_ranges(s)
+   local unit, set = s:match("^(%g+)=(.*)$")
+   if not unit then
+      return nil, "invalid range"
+   end
+   local ranges = {}
+   for spec in set:gmatch("[^, \t]+") do
+      -- int-range
+      local first, last = spec:match("^(%d+)-(%d*)$")
+      if first then
+         local range = {
+            unit = unit,
+            first = tonumber(first),
+            last = tonumber(last),
+         }
+         if range.last and range.last < range.first then
+            return nil, "invalid range"
+         end
+         table.insert(ranges, range)
+         goto continue
+      end
+      -- suffix-range
+      local suffix = spec:match("^-(%d+)$")
+      if suffix then
+         table.insert(ranges, {
+            unit = unit,
+            suffix = tonumber(suffix),
+         })
+         goto continue
+      end
+      -- other-range
+      local other = spec:match("^(%g+)$")
+      if not other then
+         return nil, "invalid range"
+      end
+      table.insert(ranges, {
+         unit = unit,
+         other = other,
+      })
+      ::continue::
+   end
+   if #ranges == 0 then
+      return nil, "invalid range"
+   end
+   return ranges
+end
+
+
+--[[ TESTS
+local function test_ranges(s, unit, specs)
+   if not unit then
+      assert(not M.parse_ranges(s), s)
+   else
+      local ranges = assert(M.parse_ranges(s), s)
+      assert(#ranges == #specs, s)
+      for i, spec in ipairs(specs) do
+         assert(ranges[i].unit == unit, s)
+         local first, last, suffix, other = table.unpack(spec)
+         assert(ranges[i].first == first, s)
+         assert(ranges[i].last == last, s)
+         assert(ranges[i].suffix == suffix, s)
+         assert(ranges[i].other == other, s)
+      end
+   end
+end
+test_ranges("asdasdasd")
+test_ranges("bytes=0-499", "bytes", {{0,499}})
+test_ranges("bytes=500-999", "bytes", {{500,999}})
+test_ranges("bytes=-500", "bytes", {{nil,nil,500}})
+test_ranges("bytes=9500-", "bytes", {{9500}})
+test_ranges("bytes=0-0,-1", "bytes", {{0,0},{nil,nil,1}})
+test_ranges("bytes= 0-999, 4500-5499, -1000", "bytes",
+   {{0,999},{4500,5499},{nil,nil,1000}})
+--]]
 
 
 return M

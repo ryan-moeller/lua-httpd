@@ -490,6 +490,16 @@ These functions are also available from the module:
   Parse an HTTP Date string into a time using `os.time()` with the appropriate
   parts of `str`.
 
+* `httpd.format_range(unit, first, last[, complete]) -> string`
+  Format a range suitable for `Content-Range`.  If `first` and `last` are `nil`,
+  the range is *unsatisfied* and `complete` must be provided.
+
+* `httpd.parse_ranges(str) -> table`
+  Parse a *ranges-specifier* as received in a `Range` header.  Returns a list of
+  `{ unit = string, first = number[, last = number] }`,
+  `{ unit = string, suffix = number }`, or `{ unit = string, other = string }`
+  tables, where all numbers are positive integers.
+
 ## Motivation
 
 I didn't feel like cross-compiling a bunch of stuff for a MIPS router.
