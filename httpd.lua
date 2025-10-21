@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.16.0"
+M.VERSION = "0.17.0"
 
 
 -- HTTP-message = start-line
@@ -143,6 +143,28 @@ function Connection:last_chunk(trailers, exts)
    end
    self:write(("0%s\r\n"):format(ext))
    self:write_fields(trailers)
+end
+
+
+-- References: RFC 9110 §8.3.3, RFC 2046 §5.1, §5.1.1
+function Connection:write_part(boundary, headers, part)
+   local part_type = type(part)
+   local part_string = part_type == "string" and part
+   local part_function = part_type == "function" and part
+
+   self:write("\r\n--", boundary, "\r\n")
+   self:write_fields(headers)
+   if part_string then
+      self:write(part_string)
+   elseif part_function then
+      self:flush()
+      part_function(self)
+   end
+end
+
+
+function Connection:close_parts(boundary)
+   self:write("\r\n--", boundary, "--")
 end
 
 

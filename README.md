@@ -408,7 +408,7 @@ parsed as a cookie-pair with the following form:
 | `name`  | string | The cookie-name token                           |
 | `value` | string | The cookie-value cookie-octets (quotes removed) |
 
-### Chunked Body Stream
+### Chunked Request Body Stream
 
 If `request.body` is a function, it returns an iterator over the stream chunks:
 
@@ -484,6 +484,8 @@ The connection object also provides the following convenience methods:
 | `:write(...)`                     | Proxy for `self.output:write(...)`     |
 | `:write_chunk(chunk[, exts])`     | Chunk-encode a string to `self.output` |
 | `:last_chunk([trailers[, exts]])` | End a chunk-encoded transfer           |
+| `:write_part(boundary, ...)`      | Write part of a multipart response     |
+| `:close_parts(boundary)`          | End a multipart response               |
 
 `:write_chunk` encodes and writes a *chunk* (bytes) to the connection output,
 optionally with a list of chunk extensions.
@@ -493,6 +495,17 @@ a list of chunk extensions, then writes any trailer fields, and finally writes
 `CRLF` to terminate the response.
 
 Chunk extensions are given as a list of strings.
+
+The full signature of `:write_part()` is
+`:write_part(boundary[, part[, headers]])`, where `part` may be a string to
+write or a function passed a `connection` for writing the contents of the part.
+
+The handler is responsible for supplying the appropriate *Content-Type* header
+with the response for multipart content.  `boundary` must match the boundary
+parameter specified by the response's *Content-Type*.
+
+`headers` and `trailers` both specify fields in the same format as described for
+`headers` in the response table format.
 
 ### Utility Functions
 
