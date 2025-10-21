@@ -187,14 +187,14 @@ server:add_route("GET", ".*", function(request)
     end
     local ims_header <const> = request.headers["if-modified-since"]
     if ims_header then
-        local ims <const> = httpd.parse_date(ims_header:concat())
+        local ims <const> = ims_header:date()
         if not ims then
             return {status=400, reason="Bad Request", body="bad request"}
         end
         if os.difftime(st.modification, ims) <= 0 then
             local headers <const> = {
                 -- Might be useful.
-                ["Last-Modified"] = httpd.format_date(st.modification),
+                ["Last-Modified"] = {date=st.modification},
             }
             return {status=304, reason="Not Modified", headers=headers}
         end
@@ -219,15 +219,14 @@ server:add_route("GET", ".*", function(request)
         ["Content-Length"] = st.size,
         ["Content-Type"] = assert(m:descriptor(f)),
         ["X-Content-Type-Options"] = "nosniff",
-        ["Last-Modified"] = httpd.format_date(st.modification),
+        ["Last-Modified"] = {date=st.modification},
     }
     local send <const> = {offset=0, nbytes=0, resid=st.size}
     local range_header <const> = request.headers["range"]
     if range_header then
-        local ranges = httpd.parse_ranges(range_header:concat())
+        local ranges = range_header:ranges()
         if ranges then
-            local unsatisfied <const> =
-                httpd.format_range("bytes", nil, nil, st.size)
+            local unsatisfied <const> = {range={"bytes", nil, nil, st.size}}
             local unsatisfied <const> = {
                 status=416, reason="Range Not Satisfiable",
                 headers={["Content-Range"]=unsatisfied},
@@ -260,8 +259,9 @@ server:add_route("GET", ".*", function(request)
             if length < st.size then
                 send.nbytes = length
                 headers["Content-Length"] = length
-                headers["Content-Range"] = httpd.format_range("bytes",
-                    range.first, range.last, st.size)
+                headers["Content-Range"] = {
+                    range={"bytes", range.first, range.last, st.size}
+                }
             else
                 assert(send.offset == 0);
             end

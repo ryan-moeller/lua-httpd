@@ -335,7 +335,7 @@ Handler functions receive a `request` table with the following fields:
 | `matches`    | table              | Captures or match from route Lua pattern |
 | `connection` | table              | Reference to the connection object       |
 
-### Request Headers and Trailers
+### Request Fields
 
 The `request.headers` and `request.trailers` tables use lowercased names as keys
 and tables with the following structure as values:
@@ -372,16 +372,29 @@ The attribute form:
 | ----------- | ------ | ------------------------ |
 | `attribute` | string | The attribute name token |
 
-A few convenience methods are also provided on header/trailer objects:
+A few convenience methods are also provided on fields:
 
 | Method                   | Description                                       |
 | ------------------------ | ------------------------------------------------- |
 | `:concat(...)`           | Returns `table.concat(self.raw, ...)`             |
 | `:contains_value(value)` | Tests if any element value field equals `value`   |
 | `:find_elements(value)`  | Returns a list of the elements with value `value` |
+| `:date()`                | Parses an *HTTP-date*, returning time as a number |
+| `:ranges()`              | Parses a *ranges-specifier*, returning a list     |
 
 Headers are validated and parsed lazily, so headers that are not accessed via
 `raw`, `elements`, or a convenience method do not get validated or parsed.
+
+Both `:date()` and `:ranges()` return `nil` and an error string if the field is
+malformed.
+
+`:ranges()` returns a list, with each element taking one of the following forms:
+
+* `{ unit = string, first = number[, last = number] }`
+* `{ unit = string, suffix = number }`
+* `{ unit = string, other = string }`
+
+All numbers in the above forms are positive integers.
 
 ### Request Cookies
 
@@ -409,7 +422,7 @@ end
 
 The body chunks iterator must be consumed for `response.trailers` to be set.
 
-To send a chunked response body, include a "Transfer-Encoding: chunked" header
+To send a chunked response body, include a `Transfer-Encoding: chunked` header
 in the response object and use `httpd.write_chunk(output, chunk, exts)` and
 `httpd.write_trailers(output, trailers)` in the reponse body function.
 
@@ -428,12 +441,23 @@ Handlers must return a response table:
 To send multiple headers with the same name, set the value to a list of strings.
 Each string will be sent in order as a separate header field.
 
-A Date header is automatically added if not present in `response.headers`.
+Two special header formats are recognized:
 
-A Content-Length header is automatically added when `response.body` is a string.
+* `{ date = true | number }`
+  Format an *HTTP-date* string using `os.date()` with the appropriate format.
+  If provided a number, the number is passed as the time.  Otherwise, no time is
+  passed and the current time is used.
 
-Handlers are responsible for incorporating any cookie attributes into the value
-string.
+* `{ range = { unit, first, last[, complete] } }`
+  Format a range suitable for *Content-Range*.  If `first` and `last` are `nil`,
+  the range is *unsatisfied* and `complete` must be provided.
+
+A *Date* header is automatically added if not present in `response.headers`.
+
+A *Content-Length* header is automatically added when `response.body` is a string.
+
+Handlers are responsible for incorporating any field parameters or cookie
+attributes into the value string.
 
 If `body` is a function, it is called with a `connection` object and must write
 the response manually.  The `connection` object is described in further detail
@@ -461,12 +485,12 @@ The connection object also provides the following convenience methods:
 | `:write_chunk(chunk[, exts])`     | Chunk-encode a string to `self.output` |
 | `:last_chunk([trailers[, exts]])` | End a chunk-encoded transfer           |
 
-`:write_chunk` encodes and writes a chunk (bytes) to the connection output,
-optionally with a list of extensions.
+`:write_chunk` encodes and writes a *chunk* (bytes) to the connection output,
+optionally with a list of chunk extensions.
 
-`:last_chunk` writes the last-chunk to the connection output, optionally with a
-list of extensions, then writes any trailer fields, and finally writes CRLF to
-terminate the response.
+`:last_chunk` writes the *last-chunk* to the connection output, optionally with
+a list of chunk extensions, then writes any trailer fields, and finally writes
+`CRLF` to terminate the response.
 
 Chunk extensions are given as a list of strings.
 
@@ -482,23 +506,6 @@ These functions are also available from the module:
 
 * `httpd.parse_query_string(query) → table`
   Parse a URL query string into a table of key → `{ values }`.
-
-* `httpd.format_date([time]) -> string`
-  Format an HTTP Date string using `os.date()` with the appropriate format.
-
-* `httpd.parse_date(str) -> number`
-  Parse an HTTP Date string into a time using `os.time()` with the appropriate
-  parts of `str`.
-
-* `httpd.format_range(unit, first, last[, complete]) -> string`
-  Format a range suitable for `Content-Range`.  If `first` and `last` are `nil`,
-  the range is *unsatisfied* and `complete` must be provided.
-
-* `httpd.parse_ranges(str) -> table`
-  Parse a *ranges-specifier* as received in a `Range` header.  Returns a list of
-  `{ unit = string, first = number[, last = number] }`,
-  `{ unit = string, suffix = number }`, or `{ unit = string, other = string }`
-  tables, where all numbers are positive integers.
 
 ## Motivation
 
