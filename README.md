@@ -520,6 +520,15 @@ These functions are also available from the module:
 * `httpd.parse_query_string(query) → table`
   Parse a URL query string into a table of key → `{ values }`.
 
+## Testing
+
+The samples under `samples/` can be used to exercise common real-world usage for
+manual integration testing.  Unit tests for specific internal components of the
+module are implemented under `tests/` and are designed for automated testing
+driven by [Kyua][freebsd/kyua].
+
+[freebsd/kyua]: https://github.com/freebsd/kyua/wiki/Quickstart#executing-a-test-suite
+
 ## Motivation
 
 I didn't feel like cross-compiling a bunch of stuff for a MIPS router.
@@ -529,8 +538,8 @@ It had a Lua interpreter on it, and I like Lua, so I wrote this.
 
 Inetd populates stdin, stdout, and stderr descriptors with the socket.  This is
 not ideal for error logging, since errors will be sent to the client and break
-the HTTP protocol.  To remedy, [ryan-moeller/flualibs][1] has a `fileno` library
-that can be combined with FreeBSD's `posix.unistd.dup2` as follows:
+the HTTP protocol.  To remedy, [flualibs][ryan-moeller/flualibs] has a `fileno`
+library that can be combined with FreeBSD's `posix.unistd.dup2` as follows:
 
 ```lua
 do
@@ -549,4 +558,4 @@ a file on the server instead of confusing the client.
 This is for capturing Lua errors specifically, not error level messages to the
 server log.  The server log and stderr may be directed to the same file, or not.
 
-[1]: https://github.com/ryan-moeller/flualibs
+[ryan-moeller/flualibs]: https://github.com/ryan-moeller/flualibs
