@@ -1,0 +1,37 @@
+#!/usr/libexec/flua
+
+local dirname <const> = require('posix').libgen.dirname
+package.path = dirname(dirname(arg[0]))..'/?.lua'
+_TEST = true
+local httpd <const> = require('httpd')
+
+local function test_ranges(s, unit, specs)
+    local field <const> = httpd.new_request_field()
+    table.insert(field.unvalidated, s)
+    if not unit then
+        assert(not field:ranges(), s)
+    else
+        local ranges <const> = assert(field:ranges(), s)
+        assert(#ranges == #specs, s)
+        for i, spec in ipairs(specs) do
+            assert(ranges[i].unit == unit, s)
+            local first <const>, last <const>, suffix <const>, other <const> =
+                table.unpack(spec)
+            assert(ranges[i].first == first, s)
+            assert(ranges[i].last == last, s)
+            assert(ranges[i].suffix == suffix, s)
+            assert(ranges[i].other == other, s)
+        end
+    end
+end
+
+test_ranges('bytes=0-499', 'bytes', {{0,499}})
+test_ranges('bytes=500-999', 'bytes', {{500,999}})
+test_ranges('bytes=-500', 'bytes', {{nil,nil,500}})
+test_ranges('bytes=9500-', 'bytes', {{9500}})
+test_ranges('bytes=0-0,-1', 'bytes', {{0,0},{nil,nil,1}})
+test_ranges('bytes= 0-999, 4500-5499, -1000', 'bytes',
+    {{0,999},{4500,5499},{nil,nil,1000}})
+test_ranges('asdasdasd') -- invalid
+
+-- vim: set et sw=4:

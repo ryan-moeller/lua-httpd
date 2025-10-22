@@ -1,0 +1,39 @@
+#!/usr/libexec/flua
+
+local dirname <const> = require('posix').libgen.dirname
+package.path = dirname(dirname(arg[0]))..'/?.lua'
+_TEST = true
+local httpd <const> = require('httpd')
+
+local function test_value(value, spec_cookies)
+    local connection <const> = setmetatable({
+        cookies = {},
+        server = {log={warn=function() end}},
+    }, httpd.Connection)
+    connection:set_cookies(value)
+    assert(#connection.cookies == #spec_cookies, value)
+    for i, cspec in ipairs(spec_cookies) do
+        local cookie <const> = connection.cookies[i]
+        assert(cookie.name == cspec.name, value)
+        assert(cookie.value == cspec.value, value)
+    end
+end
+
+test_value('sessionid=abc123; user="john_doe"; theme=dark', {
+    {name='sessionid', value='abc123'},
+    {name='user', value='john_doe'},
+    {name='theme', value='dark'},
+})
+test_value('a=b', {
+    {name='a', value='b'},
+})
+-- invalid values
+test_value('sessionid=abc123 ;user=badsep', {})
+test_value('foo@bar=baz', {})
+test_value('a=b;', {})
+test_value('', {})
+test_value('a=\x00', {})
+test_value('a=\x7f', {})
+test_value('\v=b', {})
+
+-- vim: set et sw=4:

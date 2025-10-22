@@ -1,0 +1,104 @@
+#!/usr/libexec/flua
+
+local dirname <const> = require('posix').libgen.dirname
+package.path = dirname(dirname(arg[0]))..'/?.lua'
+_TEST = true
+local httpd <const> = require('httpd')
+
+local function test_value(value, spec_elements)
+    local field <const> = httpd.new_request_field()
+    table.insert(field.unvalidated, value)
+    assert(#field.raw == 1, value)
+    assert(field.raw[1] == value, value)
+    assert(#field.elements == #spec_elements, value)
+    for i, espec in ipairs(spec_elements) do
+        local element <const> = field.elements[i]
+        assert(element.value == espec.value, value)
+        assert(type(element.params) == type(espec.params), value)
+        assert(#(element.params or {}) == #(espec.params or {}), value)
+        for j, pspec in ipairs(espec.params or {}) do
+            local param <const> = element.params[j]
+            assert(param.name == pspec.name, value)
+            assert(param.value == pspec.value, value)
+            assert(param.attribute == pspec.attribute, value)
+        end
+        -- TODO: comments?
+    end
+end
+
+local function test_invalid(value)
+    local field <const> = httpd.new_request_field()
+    table.insert(field.unvalidated, value)
+    assert(#field.raw == 0, value)
+    assert(#field.elements == 0, value)
+end
+
+test_value('token', {
+    {value='token'},
+})
+test_value('token1, token2', {
+    {value='token1'},
+    {value='token2'},
+})
+test_value('token; param=value', {
+    {
+        value='token',
+        params={
+            {name='param', value='value'},
+        },
+    },
+})
+test_value(';attribute;param=value', {
+    {
+        params={
+            {attribute='attribute'},
+            {name='param', value='value'},
+        },
+    },
+})
+test_value('"quoted string"', {
+    {value='quoted string'},
+})
+test_value('"\\""', {
+    {value='"'},
+})
+test_value('"\\"quotes in a quoted string\\""', {
+    {value='"quotes in a quoted string"'},
+})
+test_value('token (comment)', {
+    {value='token'}, -- TODO: comments?
+})
+test_value('(comment \\( with escape)', {
+    {}, -- TODO: comments?
+})
+test_value('x,,', {
+    {value='x'},
+})
+test_value('x;y;;z;', {
+    {
+        value='x',
+        params={
+            {attribute='y'},
+            {attribute='z'},
+        },
+    },
+})
+test_value('x,(y);', {
+    {value='x'},
+    {}, -- TODO: comments?
+})
+test_value('Sun, 06 Nov 1994 08:49:37 GMT', {})
+
+test_invalid('\x00')
+for c = 1, 8 do
+    test_invalid(string.char(c))
+end
+test_invalid('\x0b')
+test_invalid('\x0c')
+for c = 0xe, 0x1f do
+    test_invalid(string.char(c))
+end
+test_invalid('\x7f')
+test_invalid('ok, \x00, ok')
+
+-- vim: set et sw=4:

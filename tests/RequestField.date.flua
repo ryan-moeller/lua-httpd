@@ -1,0 +1,16 @@
+#!/usr/libexec/flua
+
+local dirname <const> = require('posix').libgen.dirname
+package.path = dirname(dirname(arg[0]))..'/?.lua'
+_TEST = true
+local httpd <const> = require('httpd')
+
+local field <const> = httpd.new_request_field()
+table.insert(field.unvalidated, 'Wed, 15 Oct 2025 22:47:17 GMT')
+assert(field:date())
+
+local field <const> = httpd.new_request_field()
+table.insert(field.unvalidated, 'somejunk')
+assert(not field:date())
+
+-- vim: set et sw=4:

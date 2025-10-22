@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.17.0"
+M.VERSION = "0.17.1"
 
 
 -- HTTP-message = start-line
@@ -73,19 +73,12 @@ end
 
 
 -- References: RFC 9110 §14.1.1, §14.4
-function format_range(unit, first, last, complete)
+local function format_range(unit, first, last, complete)
    if not first and not last then
       return ("%s */%d"):format(unit, complete)
    end
    return ("%s %d-%s/%s"):format(unit, first, last, complete or "*")
 end
-
-
---[[ TESTS
-assert(format_range("bytes", 42, 1233, 1234) == "bytes 42-1233/1234")
-assert(format_range("bytes", 42, 1233) == "bytes 42-1233/*")
-assert(format_range("bytes", nil, nil, 1234) == "bytes */1234")
---]]
 
 
 -- Helper for writing a list of fields.
@@ -1307,70 +1300,6 @@ local function new_request_field()
 end
 
 
---[[ TESTS
-local values = {
-   "token",
-   "token1, token2",
-   "token; param=value",
-   ";attribute;param=value",
-   '"quoted string"',
-   '"\\""',
-   '"\\"quotes in a quoted string\\""',
-   "token (comment)",
-   "(comment \\( with escape)",
-   "x,,",
-   "x;y;;z;",
-   "x,(y);",
-   "Sun, 06 Nov 1994 08:49:37 GMT",
-}
-local ucl = require("ucl")
-for _, value in ipairs(values) do
-   print("field value: ", value)
-   local field = new_request_field()
-   table.insert(field.unvalidated, value)
-   -- Note if tracing is added to parse_field_value() that it is invoked once
-   -- for `raw` but not again for `elements`, because the result is memoized.
-   print("raw: ", ucl.to_json(field.raw))
-   print("elements: ", ucl.to_json(field.elements))
-   -- TODO: asserts to check behavior instead of manual checking
-end
--- :date()
-local field = new_request_field()
-table.insert(field.unvalidated, "Wed, 15 Oct 2025 22:47:17 GMT")
-assert(field:date())
-local field = new_request_field()
-table.insert(field.unvalidated, "somejunk")
-assert(not field:date())
--- :ranges()
-local function test_ranges(s, unit, specs)
-   local field = new_request_field()
-   table.insert(field.unvalidated, s)
-   if not unit then
-      assert(not field:ranges(), s)
-   else
-      local ranges = assert(field:ranges(), s)
-      assert(#ranges == #specs, s)
-      for i, spec in ipairs(specs) do
-         assert(ranges[i].unit == unit, s)
-         local first, last, suffix, other = table.unpack(spec)
-         assert(ranges[i].first == first, s)
-         assert(ranges[i].last == last, s)
-         assert(ranges[i].suffix == suffix, s)
-         assert(ranges[i].other == other, s)
-      end
-   end
-end
-test_ranges("asdasdasd")
-test_ranges("bytes=0-499", "bytes", {{0,499}})
-test_ranges("bytes=500-999", "bytes", {{500,999}})
-test_ranges("bytes=-500", "bytes", {{nil,nil,500}})
-test_ranges("bytes=9500-", "bytes", {{9500}})
-test_ranges("bytes=0-0,-1", "bytes", {{0,0},{nil,nil,1}})
-test_ranges("bytes= 0-999, 4500-5499, -1000", "bytes",
-   {{0,999},{4500,5499},{nil,nil,1000}})
---]]
-
-
 local function update_fields(fields, name, value)
    -- Field parsing is deferred until either field.raw or field.elements is
    -- accessed (potentially by a convenience method).
@@ -1655,28 +1584,6 @@ function Connection:set_cookies(cookie)
 end
 
 
---[[ TESTS
-local ucl = require("ucl")
-local values = {
-  'sessionid=abc123; user="john_doe"; theme=dark', -- valid
-  "sessionid=abc123 ;user=badsep",                 -- invalid
-  "foo@bar=baz",                                   -- invalid
-  "a=b; ",                                         -- invalid
-  "a=b",                                           -- valid
-}
-for _, value in ipairs(values) do
-   local connection = setmetatable({
-      cookies = {},
-      server = {log={warn=function() end}},
-   }, Connection)
-   print("Cookie:", value)
-   connection:set_cookies(value)
-   print("cookies:", ucl.to_json(connection.cookies))
-   -- TODO: asserts to check behavior instead of manual checking
-end
---]]
-
-
 function Connection:handle_header_field(line)
    if line == "\r" then
       -- When there are no headers left we get just a blank line.
@@ -1845,6 +1752,14 @@ end
 M.parse_query_string = parse_request_query
 M.percent_decode = decode
 M.percent_encode = encode
+
+
+if _TEST then
+   -- Expose some internals for testing.
+   M.Connection = Connection
+   M.new_request_field = new_request_field
+   M.format_range = format_range
+end
 
 
 return M

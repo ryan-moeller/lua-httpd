@@ -1,0 +1,15 @@
+syntax(2)
+
+test_suite('lua-httpd')
+
+local directory = fs.dirname(current_kyuafile())
+for file in fs.files(directory) do
+    if file:match('%.flua$') then
+        plain_test_program{
+            name=file,
+            required_programs='/usr/libexec/flua',
+        }
+    end
+end
+
+-- vim: set et sw=4:

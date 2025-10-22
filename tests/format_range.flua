@@ -1,0 +1,12 @@
+#!/usr/libexec/flua
+
+local dirname <const> = require('posix').libgen.dirname
+package.path = dirname(dirname(arg[0]))..'/?.lua'
+_TEST = true
+local httpd <const> = require('httpd')
+
+assert(httpd.format_range('bytes', 42, 1233, 1234) == 'bytes 42-1233/1234')
+assert(httpd.format_range('bytes', 42, 1233) == 'bytes 42-1233/*')
+assert(httpd.format_range('bytes', nil, nil, 1234) == 'bytes */1234')
+
+-- vim: set et sw=4:
