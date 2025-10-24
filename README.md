@@ -124,7 +124,7 @@ socat \
   TCP-LISTEN:80,bind=localhost,reuseaddr,fork \
   EXEC:"lua server.lua"
 
-# listen on *:https, using existing key.pem, cert.pem, and cacert.pem files
+# listen on *:https, using existing key.pem, cert.pem, and ca.pem files
 socat \
   OPENSSL-LISTEN:443,reuseaddr,fork,key=key.pem,cert=cert.pem,cafile=ca.pem \
   EXEC:"lua server.lua"
@@ -142,7 +142,7 @@ See `ncat(1)` for details.
 pkg install nmap
 # listen on *:8080
 ncat -k -l 8080 --lua-exec server.lua
-# listen on *:https, using existing key.pem, cert.pem, and cacert.pem files
+# listen on *:https, using existing key.pem, cert.pem, and ca.pem files
 ncat \
   --keep-open \
   --listen 443 \
