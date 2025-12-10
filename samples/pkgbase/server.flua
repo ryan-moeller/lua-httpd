@@ -11,7 +11,7 @@
 --
 
 local srctop <const> = "/home/ryan/src"
-local makeobjdirprefix <const> = "/storage/obj"
+local makeobjdirprefix <const> = "/usr/obj"
 local kernconf <const> = "GENERIC-KTR" -- XXX: no kernel package variants
 
 local posix <const> = require("posix")
