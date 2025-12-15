@@ -10,13 +10,13 @@ local bectl <const> = require("bectl")
 local fetch <const> = require("fetch")
 local lfs <const> = require("lfs")
 local nicenum <const> = require("be").nicenum
-local sysctl <const> = require("sysctl")
+local sysctl <const> = require("freebsd.sys.sysctl")
 
 _M.logfile = "/dev/null"
 _M.basedir = "/system"
 _M.snapshots_site = "https://download.freebsd.org/ftp/snapshots"
-_M.arch = sysctl("hw.machine"):value()
-_M.branch = sysctl("kern.osrelease"):value()
+_M.arch = sysctl.sysctl("hw.machine"):value()
+_M.branch = sysctl.sysctl("kern.osrelease"):value()
 _M.distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
 _M.config_files = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
 

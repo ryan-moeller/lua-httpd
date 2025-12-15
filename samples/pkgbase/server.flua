@@ -38,10 +38,8 @@ local logdir <const> = "/var/log"
 local logfile <const> = path(logdir, "pkgbase-builder.log")
 local errfile <const> = path(logdir, "pkgbase-builder-errors.log")
 
-require("fileno")
-local STDIN_FILENO <const> = 0
-local STDOUT_FILENO <const> = 1
-local STDERR_FILENO <const> = 2
+require("freebsd.stdio")
+local STDERR_FILENO <const> = require("freebsd.unistd").STDERR_FILENO
 
 -- inetd by default uses the same socket for stderr as it does for stdin/stdout.
 -- Setting io.stderr does not actually replace stderr of the process.  We have
@@ -61,7 +59,7 @@ local function tpl(name)
     return relpath("templates", ("%s.tpl.html"):format(name))
 end
 
-local server <const> = httpd.create_server(httpd.DEBUG, logfile)
+local server <const> = httpd.create_server(httpd.TRACE, logfile)
 local log <const> = server.log
 
 server:add_route("GET", "^/$", function(request)
@@ -80,7 +78,7 @@ end)
 
 server:add_route("GET", "^/scripts/[^/]+$", function(request)
     local lfs <const> = require("lfs")
-    local sendfile <const> = require("sendfile")
+    local sendfile <const> = require("freebsd.sys.socket").sendfile
 
     local p <const> = relpath(request.path)
     local st <const>, err <const>, code <const> = lfs.attributes(p)
@@ -146,22 +144,22 @@ server:add_route("GET", "^/ws$", function(request)
     local function ws_main(conn)
         local builder <const> = require("builder")
         local git <const> = require("git")
-        local kqueue <const> = require("kqueue")
+        local event <const> = require("freebsd.sys.event")
 
         local repo <const> = git.repo(srctop)
 
-        local kq <const> = assert(kqueue.kqueue())
+        local kq <const> = assert(event.kqueue())
         local threads <const> = {} -- XXX: coroutines have to outlive events
         local changelist
 
         -- Approximately line-buffered pipe reader and child waiter.
         local function handle_child(pipe, pid, ondata, onexit)
-            local thread <const> = coroutine.create(function(event)
+            local thread <const> = coroutine.create(function(ev)
                 local buf = ""
                 repeat
                     local data <const> =
-                        assert(posix.unistd.read(pipe, event.data))
-                    local eof <const> = event.flags & kqueue.EV_EOF ~= 0
+                        assert(posix.unistd.read(pipe, ev.data))
+                    local eof <const> = ev.flags & event.EV_EOF ~= 0
                     buf = buf .. data
                     -- Approximately line-buffered is good enough.
                     if buf:find("\n") or (eof and buf ~= "") then
@@ -169,7 +167,7 @@ server:add_route("GET", "^/ws$", function(request)
                         buf = ""
                     end
                     if not eof then
-                        event = coroutine.yield()
+                        ev = coroutine.yield()
                     end
                 until eof
                 assert(posix.unistd.close(pipe))
@@ -185,8 +183,8 @@ server:add_route("GET", "^/ws$", function(request)
             changelist = changelist or {}
             table.insert(changelist, {
                 ident = pipe,
-                filter = kqueue.EVFILT_READ,
-                flags = kqueue.EV_ADD,
+                filter = event.EVFILT_READ,
+                flags = event.EV_ADD,
                 udata = thread
             })
         end
@@ -280,7 +278,7 @@ server:add_route("GET", "^/ws$", function(request)
                 return true
             end,
         }
-        local ws_thread <const> = coroutine.create(function(event)
+        local ws_thread <const> = coroutine.create(function(ev)
             local buf = ""
             repeat
                 local payload <const>, opcode <const>, flags <const>,
@@ -319,43 +317,43 @@ server:add_route("GET", "^/ws$", function(request)
                     log:warn("unhandled op: ", opcode)
                 end
                 -- Yield once we have consumed all the data for this event.
-                if consumed >= event.data then
-                    event = coroutine.yield()
+                if consumed >= ev.data then
+                    ev = coroutine.yield()
                 else
-                    event.data = event.data - consumed
+                    ev.data = ev.data - consumed
                 end
             until false
         end)
         changelist = {
             {
                 ident = conn.input:fileno(),
-                filter = kqueue.EVFILT_READ,
-                flags = kqueue.EV_ADD,
+                filter = event.EVFILT_READ,
+                flags = event.EV_ADD,
                 udata = ws_thread
             }
         }
         while coroutine.status(ws_thread) ~= "dead" do
-            local event <const> = assert(kq:kevent(changelist))
+            local ev <const> = assert(kq:kevent(changelist))
             changelist = nil
-            local thread <const> = event.udata
+            local thread <const> = ev.udata
             if thread then
-                if (event.flags & kqueue.EV_ERROR) ~= 0 then
-                    log:error("event error:", event.data)
-                    log:debug(ucl.to_json(event))
+                if (ev.flags & event.EV_ERROR) ~= 0 then
+                    log:error("event error:", ev.data)
+                    log:debug(ucl.to_json(ev))
                 else
                     local ok <const>, err <const> =
-                        coroutine.resume(thread, event)
+                        coroutine.resume(thread, ev)
                     if not ok then
                         log:error(err)
-                        log:debug(ucl.to_json(event))
+                        log:debug(ucl.to_json(ev))
                     end
                 end
                 if coroutine.status(thread) == "dead" then
                     -- Delete the event for this thread.
-                    event.flags = kqueue.EV_DELETE
-                    event.udata = nil
+                    ev.flags = event.EV_DELETE
+                    ev.udata = nil
                     changelist = changelist or {}
-                    table.insert(changelist, event)
+                    table.insert(changelist, ev)
                     -- Now it is safe to GC the thread.
                     threads[thread] = nil
                     coroutine.close(thread)

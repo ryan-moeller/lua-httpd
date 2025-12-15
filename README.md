@@ -538,14 +538,15 @@ It had a Lua interpreter on it, and I like Lua, so I wrote this.
 
 Inetd populates stdin, stdout, and stderr descriptors with the socket.  This is
 not ideal for error logging, since errors will be sent to the client and break
-the HTTP protocol.  To remedy, [flualibs][ryan-moeller/flualibs] has a `fileno`
-library that can be combined with FreeBSD's `posix.unistd.dup2` as follows:
+the HTTP protocol.  To remedy, [flualibs][ryan-moeller/flualibs] has a
+`freebsd.stdio` module that can be combined with FreeBSD's `posix.unistd.dup2`
+as follows:
 
 ```lua
 do
     local posix <const> = require("posix")
     local STDERR_FILENO <const> = 2
-    require("fileno") -- from ryan-moeller/flualibs
+    require("freebsd.stdio") -- from ryan-moeller/flualibs
     local f <close> = io.open("/var/log/httpd-errors.log", "a+")
     f:setvbuf("no")
     assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)

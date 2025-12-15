@@ -32,8 +32,8 @@ package.path = table.concat({
 
 -- Redirect stderr to a log file.
 do
-    local STDERR_FILENO <const> = 2
-    require("fileno") -- from ryan-moeller/flualibs
+    require("freebsd.stdio") -- from ryan-moeller/flualibs
+    local STDERR_FILENO <const> = require("freebsd.unistd").STDERR_FILENO
     local f <close> = io.open("/var/log/beup-errors.log", "a+")
     f:setvbuf("no")
     assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)

@@ -1,4 +1,4 @@
-local kldstat <const> = require("kldstat") -- from ryan-moeller/flualibs
+local module <const> = require("freebsd.sys.module") -- ryan-moeller/flualibs
 
 local _M = {}
 
@@ -15,7 +15,7 @@ _M.cols = {
 
 function _M.rows()
     local klds = {}
-    for kld in kldstat.kldstat() do
+    for kld in module.kldstat() do
 	table.insert(klds, kld)
     end
     return klds

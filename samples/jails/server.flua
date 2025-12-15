@@ -32,8 +32,8 @@ package.path = table.concat({
 
 -- Redirect stderr to a log file.
 do
-    local STDERR_FILENO <const> = 2
-    require("fileno") -- from ryan-moeller/flualibs
+    require("freebsd.stdio") -- from ryan-moeller/flualibs
+    local STDERR_FILENO <const> = require("freebsd.unistd").STDERR_FILENO
     local f <close> = io.open("/var/log/jails-errors.log", "a+")
     f:setvbuf("no")
     assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
@@ -45,7 +45,7 @@ local template <const> = require("template")
 local jail <const> = require("jail")
 local ucl <const> = require("ucl")
 
-local sysctl <const> = require("sysctl") -- from ryan-moeller/flualibs
+local sysctl <const> = require("freebsd.sys.sysctl") -- ryan-moeller/flualibs
 
 local theme = "darkly"
 local snapsdir = "/system"
@@ -233,7 +233,7 @@ local function all_jail_params_dict()
         ["mount.fstab"] = formats["A"],
     }
     -- Other jail params are handled by the kernel/modules
-    for param in sysctl("security.jail.param"):iter() do
+    for param in sysctl.sysctl("security.jail.param"):iter() do
         local n = param:name()
         local _, f <const> = param:format()
         local format = formats[f]
