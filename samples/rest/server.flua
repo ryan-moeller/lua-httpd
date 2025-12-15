@@ -23,8 +23,8 @@ package.path = "/usr/pkg/luarocks/share/lua/5.3/?/init.lua;" .. package.path
 -- Redirect stderr to a log file.
 do
   local posix <const> = require("posix")
-  require("freebsd.stdio") -- from ryan-moeller/flualibs
-  local STDERR_FILENO <const> = require("freebsd.unistd").STDERR_FILENO
+  require("stdio") -- from ryan-moeller/flualibs
+  local STDERR_FILENO <const> = require("unistd").STDERR_FILENO
   local f <close> = io.open(server_error_log_path, "a+")
   f:setvbuf("no")
   assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)

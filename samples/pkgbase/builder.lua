@@ -5,7 +5,7 @@
 local exec <const> = require("exec")
 local lfs <const> = require("lfs")
 local posix <const> = require("posix")
-local sysctl <const> = require("freebsd.sys.sysctl")
+local sysctl <const> = require("sys.sysctl")
 
 local ncpu <const> = sysctl.sysctl("hw.ncpu"):value()
 

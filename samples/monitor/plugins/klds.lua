@@ -1,4 +1,4 @@
-local module <const> = require("freebsd.sys.module") -- ryan-moeller/flualibs
+local module <const> = require("sys.module") -- from ryan-moeller/flualibs
 
 local _M = {}
 

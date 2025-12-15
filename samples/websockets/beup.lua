@@ -10,7 +10,7 @@ local bectl <const> = require("bectl")
 local fetch <const> = require("fetch")
 local lfs <const> = require("lfs")
 local nicenum <const> = require("be").nicenum
-local sysctl <const> = require("freebsd.sys.sysctl")
+local sysctl <const> = require("sys.sysctl")
 
 _M.logfile = "/dev/null"
 _M.basedir = "/system"

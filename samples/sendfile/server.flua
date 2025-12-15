@@ -35,7 +35,7 @@ local httpd <const> = require("httpd")
 local template <const> = require("template")
 
 local magic <const> = require("magic")
-local sendfile <const> = require("freebsd.sys.socket").sendfile
+local sendfile <const> = require("sys.socket").sendfile
 
 local server <const> = httpd.create_server(httpd.INFO, logfile)
 local log <const> = server.log

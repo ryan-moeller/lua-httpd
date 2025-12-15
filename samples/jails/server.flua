@@ -32,8 +32,8 @@ package.path = table.concat({
 
 -- Redirect stderr to a log file.
 do
-    require("freebsd.stdio") -- from ryan-moeller/flualibs
-    local STDERR_FILENO <const> = require("freebsd.unistd").STDERR_FILENO
+    require("stdio") -- from ryan-moeller/flualibs
+    local STDERR_FILENO <const> = require("unistd").STDERR_FILENO
     local f <close> = io.open("/var/log/jails-errors.log", "a+")
     f:setvbuf("no")
     assert(posix.unistd.dup2(f:fileno(), STDERR_FILENO) == STDERR_FILENO)
@@ -45,7 +45,7 @@ local template <const> = require("template")
 local jail <const> = require("jail")
 local ucl <const> = require("ucl")
 
-local sysctl <const> = require("freebsd.sys.sysctl") -- ryan-moeller/flualibs
+local sysctl <const> = require("sys.sysctl") -- ryan-moeller/flualibs
 
 local theme = "darkly"
 local snapsdir = "/system"

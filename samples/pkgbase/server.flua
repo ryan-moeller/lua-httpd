@@ -38,8 +38,8 @@ local logdir <const> = "/var/log"
 local logfile <const> = path(logdir, "pkgbase-builder.log")
 local errfile <const> = path(logdir, "pkgbase-builder-errors.log")
 
-require("freebsd.stdio")
-local STDERR_FILENO <const> = require("freebsd.unistd").STDERR_FILENO
+require("stdio")
+local STDERR_FILENO <const> = require("unistd").STDERR_FILENO
 
 -- inetd by default uses the same socket for stderr as it does for stdin/stdout.
 -- Setting io.stderr does not actually replace stderr of the process.  We have
@@ -59,7 +59,7 @@ local function tpl(name)
     return relpath("templates", ("%s.tpl.html"):format(name))
 end
 
-local server <const> = httpd.create_server(httpd.TRACE, logfile)
+local server <const> = httpd.create_server(httpd.DEBUG, logfile)
 local log <const> = server.log
 
 server:add_route("GET", "^/$", function(request)
@@ -78,7 +78,7 @@ end)
 
 server:add_route("GET", "^/scripts/[^/]+$", function(request)
     local lfs <const> = require("lfs")
-    local sendfile <const> = require("freebsd.sys.socket").sendfile
+    local sendfile <const> = require("sys.socket").sendfile
 
     local p <const> = relpath(request.path)
     local st <const>, err <const>, code <const> = lfs.attributes(p)
@@ -144,7 +144,7 @@ server:add_route("GET", "^/ws$", function(request)
     local function ws_main(conn)
         local builder <const> = require("builder")
         local git <const> = require("git")
-        local event <const> = require("freebsd.sys.event")
+        local event <const> = require("sys.event")
 
         local repo <const> = git.repo(srctop)
 
