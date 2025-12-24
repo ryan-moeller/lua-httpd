@@ -57,9 +57,9 @@ function _M.activate(name)
     handle:activate(name, false)
 end
 
-function _M.destroy(name)
+function _M.destroy(name, options)
     local handle <const> = init_quiet()
-    handle:destroy(name, 0)
+    handle:destroy(name, options or 0)
 end
 
 return _M

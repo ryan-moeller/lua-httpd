@@ -206,6 +206,7 @@ server:add_route("GET", "^/ws$", function(request)
         ["Sec-WebSocket-Accept"] = ws.accept(key),
     }
     local function ws_main(conn)
+        local be <const> = require("be")
         local bectl <const> = require("bectl")
         local beup <const> = require("beup")
         local event <const> = require("sys.event")
@@ -347,7 +348,7 @@ server:add_route("GET", "^/ws$", function(request)
             end,
             [CMD_BE_DESTROY] = function(msg)
                 bectl.umount(msg.data.be)
-                bectl.destroy(msg.data.be)
+                bectl.destroy(msg.data.be, be.DESTROY_AUTOORIGIN)
                 return true
             end,
             [CMD_SNAP_DELETE] = function(msg)
