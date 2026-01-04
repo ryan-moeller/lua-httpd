@@ -15,8 +15,11 @@ local function init_quiet()
 end
 
 function _M.list()
-    local handle <const> = init_quiet()
-    local props <const> = handle:get_bootenv_props()
+    local handle <close> = init_quiet()
+    local props <const>, err <const>, rc <const> = handle:get_bootenv_props()
+    if not props then
+        return nil, err, rc
+    end
     local bes <const> = {}
     for name in pairs(props) do
         table.insert(bes, name)
@@ -38,28 +41,28 @@ function _M.list()
 end
 
 function _M.create(name)
-    local handle <const> = init_quiet()
-    handle:create(name)
+    local handle <close> = init_quiet()
+    return handle:create(name)
 end
 
 function _M.mount(name)
-    local handle <const> = init_quiet()
+    local handle <close> = init_quiet()
     return handle:mount(name, nil, be.MNT_DEEP)
 end
 
 function _M.umount(name)
-    local handle <const> = init_quiet()
-    handle:unmount(name, 0)
+    local handle <close> = init_quiet()
+    return handle:unmount(name, 0)
 end
 
 function _M.activate(name)
-    local handle <const> = init_quiet()
-    handle:activate(name, false)
+    local handle <close> = init_quiet()
+    return handle:activate(name, false)
 end
 
 function _M.destroy(name, options)
-    local handle <const> = init_quiet()
-    handle:destroy(name, options or 0)
+    local handle <close> = init_quiet()
+    return handle:destroy(name, options or 0)
 end
 
 return _M

@@ -165,10 +165,16 @@ function _M.update(set_progress)
     end
 
     progress("Creating boot environment")
-    bectl.create(name)
+    local ok <const>, err <const>, rc <const> = bectl.create(name)
+    if not ok then
+        return nil, err, rc
+    end
 
     progress("Mounting boot environment")
-    local mountpoint <const> = bectl.mount(name)
+    local mountpoint <const>, err <const>, rc <const> = bectl.mount(name)
+    if not mountpoint then
+        return nil, err, rc
+    end
 
     progress("Setting filesystem flags")
     local cmd <const> = string.format("chflags -R noschg %s", mountpoint)
@@ -237,10 +243,16 @@ function _M.update(set_progress)
     -- proper 3-way merge like etcupdate...
 
     progress("Unmounting boot environment")
-    bectl.umount(name)
+    local ok <const>, err <const>, rc <const> = bectl.umount(name)
+    if not ok then
+        return nil, err, rc
+    end
 
     progress("Activating boot environment")
-    bectl.activate(name)
+    local ok <const>, err <const>, rc <const> = bectl.activate(name)
+    if not ok then
+        return nil, err, rc
+    end
 
     progress("Update finished, please reboot")
     return true

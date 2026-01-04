@@ -271,7 +271,7 @@ server:add_route("GET", "^/ws$", function(request)
                 return true
             end,
             [CMD_BE_LIST] = function(msg)
-                ws_send{command=msg.command, data=bectl.list()}
+                ws_send{command=msg.command, data=assert(bectl.list())}
                 return true
             end,
             [CMD_SNAP_LIST] = function(msg)
@@ -347,8 +347,8 @@ server:add_route("GET", "^/ws$", function(request)
                 return true
             end,
             [CMD_BE_DESTROY] = function(msg)
-                bectl.umount(msg.data.be)
-                bectl.destroy(msg.data.be, be.DESTROY_AUTOORIGIN)
+                assert(bectl.umount(msg.data.be))
+                assert(bectl.destroy(msg.data.be, be.DESTROY_AUTOORIGIN))
                 return true
             end,
             [CMD_SNAP_DELETE] = function(msg)
