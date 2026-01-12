@@ -242,14 +242,13 @@ server:add_route("GET", "^/ws$", function(request)
             [CMD_REPO_BUILD] = function(msg)
                 local w <const> = msg.data
                 local b <const> = builder.new(w, makeenv, makevars)
-                local make_target <const> = b:start_build()
+                local make <const> = b:start_build()
                 -- TODO: improve logging (syslog?)
                 local buildlog <const> = assert(io.open(path(logdir,
                     "pkgbase-build.log"), "w+"))
                 buildlog:setvbuf("no")
                 local function step_build()
-                    local pipe <const>, pid <const>, target <const> =
-                        make_target()
+                    local pipe <const>, pid <const>, target <const> = make()
                     if not pipe then
                         log:trace("BUILD COMPLETE")
                         ws_send{command=msg.command, worktree=w, done=true}

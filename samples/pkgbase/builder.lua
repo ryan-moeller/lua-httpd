@@ -89,11 +89,11 @@ function _M:start_build(j, fake)
     args[#args + 1] = "target" -- placeholder
     local function srcmake(target)
         args[#args] = target
-        local r <const>, pid <const> = exec(args)
-        return r, pid, target
+        local pipe <const>, pid <const> = exec(args)
+        return pipe, pid, target
     end
     local step = 0
-    local targets <const> = { "buildworld", "buildkernel", "packages" }
+    local targets <const> = {"buildworld", "buildkernel", "packages"}
     return function()
         step = step + 1
         local target <const> = targets[step]
