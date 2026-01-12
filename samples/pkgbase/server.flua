@@ -241,7 +241,7 @@ server:add_route("GET", "^/ws$", function(request)
                         ws_send{command=msg.command, worktree=w, done=true}
                         return
                     end
-                    log:trace("BUILD STEP: ", target)
+                    log:trace("BUILD STEP: ", target, " PID: ", pid)
                     handle_child(pipe, pid,
                         function(buf)
                             assert(buildlog:write(buf))
