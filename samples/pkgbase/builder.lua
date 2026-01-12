@@ -11,6 +11,9 @@ local ncpu <const> = sysctl.sysctl("hw.ncpu"):value()
 
 local _M <const> = {}
 
+_M.WORKDIR = "/var/empty"
+_M.OBJDIR = "/usr/obj"
+
 function _M.new(srctop, env, vars)
     return setmetatable({
         srctop = srctop,
@@ -25,7 +28,7 @@ end
 
 function _M:repo_list()
     local repos <const> = {}
-    local repodir <const> = path(self.env.MAKEOBJDIRPREFIX or "/usr/obj",
+    local repodir <const> = path(self.env.MAKEOBJDIRPREFIX or _M.OBJDIR,
         self.srctop, "repo")
     local st <const> = lfs.attributes(repodir)
     if not st or st.mode ~= "directory" then
@@ -66,7 +69,7 @@ function _M:start_build(j, fake)
     if not j or j < 1 or j > (ncpu + 1) then
         j = ncpu + 1
     end
-    local args <const> = {"env", "-i"}
+    local args <const> = {"env", "-i", "-C", _M.WORKDIR}
     for var, val in pairs(self.env) do
         args[#args + 1] = string.format("%s=%s", var, val)
     end
@@ -102,7 +105,7 @@ end
 
 function _M:delete_build(pkg_abi, version)
     local builddir <const> =
-        path(self.env.MAKEOBJDIRPREFIX or "/usr/obj", self.srctop, "repo",
+        path(self.env.MAKEOBJDIRPREFIX or _M.OBJDIR, self.srctop, "repo",
             pkg_abi, version)
     -- TODO: check real path is safe
     -- TODO: actually traverse the tree and check each file is safe to remove...
