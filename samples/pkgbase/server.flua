@@ -229,6 +229,10 @@ server:add_route("GET", "^/ws$", function(request)
                 local w <const> = msg.data
                 local b <const> = builder.new(w, makeobjdirprefix, kernconf)
                 local make_target <const> = b:start_build()
+                -- TODO: improve logging (syslog?)
+                local buildlog <const> = assert(io.open(path(logdir,
+                    "pkgbase-build.log"), "w+"))
+                buildlog:setvbuf("no")
                 local function step_build()
                     local pipe <const>, pid <const>, target <const> =
                         make_target()
@@ -240,6 +244,8 @@ server:add_route("GET", "^/ws$", function(request)
                     log:trace("BUILD STEP: ", target)
                     handle_child(pipe, pid,
                         function(buf)
+                            assert(buildlog:write(buf))
+                            -- TODO: scrollback in UI
                             ws_send{command=msg.command, worktree=w,
                                 target=target, output=buf}
                         end,
