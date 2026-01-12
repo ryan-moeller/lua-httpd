@@ -17,6 +17,7 @@ return function(argv)
         assert(posix.unistd.close(STDIN_FILENO))
         assert(posix.unistd.dup2(w, STDOUT_FILENO))
         assert(posix.unistd.dup2(w, STDERR_FILENO))
+        assert(posix.unistd.close(w));
         -- XXX: Want posix.unistd.closefrom() here.
         -- XXX: This seems to work correctly only when argv[1] is "env".
         assert(posix.unistd.execp(argv[1], argv))
