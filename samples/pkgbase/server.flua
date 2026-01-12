@@ -10,9 +10,23 @@
 -- http  stream  tcp  nowait  www  /path/to/lua-httpd/samples/pkgbase/server.flua  pkgbase-builder
 --
 
+-- local configuration
 local srctop <const> = "/home/ryan/src"
-local makeobjdirprefix <const> = "/usr/obj"
-local kernconf <const> = "GENERIC-KTR" -- XXX: no kernel package variants
+local makeenv <const> = {
+    MAKEOBJDIRPREFIX = "/usr/obj",
+    CCACHE_BASEDIR="/home/ryan",
+    CCACHE_DIR = "/storage/ccache",
+}
+local makevars <const> = {
+    -- KERNCONF = "GENERIC-KTR",
+    -- KERNFAST = "GENERIC-KTR",
+    MK_LIB32 = "no",
+    WITH_CCACHE_BUILD = true,
+    WITH_META_MODE = true,
+    NO_ROOT = true,
+    DB_FROM_SRC = true,
+    KERNFAST = true,
+}
 
 local posix <const> = require("posix")
 
@@ -221,13 +235,13 @@ server:add_route("GET", "^/ws$", function(request)
             end,
             [CMD_REPO_LIST] = function(msg)
                 local w <const> = msg.data
-                local b <const> = builder.new(w, makeobjdirprefix, kernconf)
+                local b <const> = builder.new(w, makeenv, makevars)
                 ws_send{command=msg.command, worktree=w, repo=b:repo_list()}
                 return true
             end,
             [CMD_REPO_BUILD] = function(msg)
                 local w <const> = msg.data
-                local b <const> = builder.new(w, makeobjdirprefix, kernconf)
+                local b <const> = builder.new(w, makeenv, makevars)
                 local make_target <const> = b:start_build()
                 -- TODO: improve logging (syslog?)
                 local buildlog <const> = assert(io.open(path(logdir,
@@ -264,7 +278,7 @@ server:add_route("GET", "^/ws$", function(request)
             [CMD_REPO_DELETE] = function(msg)
                 local opts <const> = msg.data
                 local b <const> =
-                    builder.new(opts.worktree, makeobjdirprefix, kernconf)
+                    builder.new(opts.worktree, makeenv, makevars)
                 local pipe <const>, pid <const> =
                     b:delete_build(opts.pkg_abi, opts.version)
                 handle_child(pipe, pid,

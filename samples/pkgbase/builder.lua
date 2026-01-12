@@ -11,11 +11,11 @@ local ncpu <const> = sysctl.sysctl("hw.ncpu"):value()
 
 local _M <const> = {}
 
-function _M.new(srctop, makeobjdirprefix, kernconf)
+function _M.new(srctop, env, vars)
     return setmetatable({
         srctop = srctop,
-        makeobjdirprefix = makeobjdirprefix,
-        kernconf = kernconf or "GENERIC", -- TODO: how to keep track of this?
+        env = env or {},
+        vars = vars or {},
     }, {__index=_M})
 end
 
@@ -25,7 +25,8 @@ end
 
 function _M:repo_list()
     local repos <const> = {}
-    local repodir <const> = path(self.makeobjdirprefix, self.srctop, "repo")
+    local repodir <const> = path(self.env.MAKEOBJDIRPREFIX or "/usr/obj",
+        self.srctop, "repo")
     local st <const> = lfs.attributes(repodir)
     if not st or st.mode ~= "directory" then
         return nil
@@ -65,21 +66,27 @@ function _M:start_build(j, fake)
     if not j or j < 1 or j > (ncpu + 1) then
         j = ncpu + 1
     end
-    local function srcmake(target)
-        local r <const>, pid <const> = exec{
-            "env", "-i",
-            "MAKEOBJDIRPREFIX="..self.makeobjdirprefix,
-            "KERNCONF="..self.kernconf,
+    local args <const> = {"env", "-i"}
+    for var, val in pairs(self.env) do
+        args[#args + 1] = string.format("%s=%s", var, val)
+    end
+    local make_args <const> = {
             fake or "make",
             "-C", self.srctop,
             "-j"..tostring(j),
-            "-DWITH_META_MODE",
-            "-DWITH_CCACHE_BUILD",
-            "-DNO_ROOT",
-            "-DDB_FROM_SRC",
-            "-DKERNFAST="..self.kernconf,
-            target
-        }
+    }
+    for var, val in pairs(self.vars) do
+        if val == true then
+            make_args[#make_args + 1] = "-D"..var
+        else
+            make_args[#make_args + 1] = string.format("%s=%s", var, val)
+        end
+    end
+    table.move(make_args, 1, #make_args, #args + 1, args)
+    args[#args + 1] = "target" -- placeholder
+    local function srcmake(target)
+        args[#args] = target
+        local r <const>, pid <const> = exec(args)
         return r, pid, target
     end
     local step = 0
@@ -95,7 +102,8 @@ end
 
 function _M:delete_build(pkg_abi, version)
     local builddir <const> =
-        path(self.makeobjdirprefix, self.srctop, "repo", pkg_abi, version)
+        path(self.env.MAKEOBJDIRPREFIX or "/usr/obj", self.srctop, "repo",
+            pkg_abi, version)
     -- TODO: check real path is safe
     -- TODO: actually traverse the tree and check each file is safe to remove...
     -- TODO: relink latest
