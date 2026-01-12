@@ -431,7 +431,9 @@ server:add_route("GET", "^/ws$", function(request)
                     ev.flags = event.EV_DELETE
                     ev.udata = nil
                     changelist = changelist or {}
-                    table.insert(changelist, ev)
+                    -- Insert the change at the *front* of the list, in case the
+                    -- thread that just ran inserted a change for a recycled fd.
+                    table.insert(changelist, 1, ev)
                     -- Now it is safe to GC the thread.
                     threads[thread] = nil
                     coroutine.close(thread)
