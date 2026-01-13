@@ -18,15 +18,23 @@
         <p class="subtitle">
           WebUI for building <strong>FreeBSD</strong> pkgbase repos
         </p>
-        <div class="block">
-          <label class="label is-inline">SRCTOP=</label>
-          {{srctop}}
-          <br/>
-          <label class="label is-inline">MAKEOBJDIRPREFIX=</label>
-          {{makeobjdirprefix}}
-          <br/>
-          <label class="label is-inline">KERNCONF=</label>
-          {{kernconf}}
+        <div class="columns">
+          <div class="column">
+            <h6 class="subtitle is-6 my-0">Build Environment</h6>
+            {% for var, val in pairs(makeenv) do %}
+              <label class="label is-inline">{{var}}=</label>
+              {{val}}
+              <br/>
+            {% end %}
+          </div>
+          <div class="column">
+            <h6 class="subtitle is-6 my-0">Build Variables</h6>
+            {% for var, val in pairs(makevars) do %}
+              <label class="label is-inline">{{var}}=</label>
+              {{val}}
+              <br/>
+            {% end %}
+          </div>
         </div>
       </div>
     </section>

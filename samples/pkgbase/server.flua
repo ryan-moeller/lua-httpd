@@ -11,7 +11,7 @@
 --
 
 -- local configuration
-local srctop <const> = "/home/ryan/src"
+local srcrepo <const> = "/home/ryan/src"
 local makeenv <const> = {
     MAKEOBJDIRPREFIX = "/usr/obj",
     CCACHE_BASEDIR="/home/ryan",
@@ -83,9 +83,8 @@ server:add_route("GET", "^/$", function(request)
         ["Cache-Control"] = "no-store",
     }
     local body <const> = template.process(tpl"index", {
-        srctop = srctop,
-        makeobjdirprefix = makeobjdirprefix,
-        kernconf = kernconf,
+        makeenv = makeenv,
+        makevars = makevars,
     })
     return { headers=headers, status=200, reason="ok", body=body }
 end)
@@ -160,7 +159,7 @@ server:add_route("GET", "^/ws$", function(request)
         local git <const> = require("git")
         local event <const> = require("sys.event")
 
-        local repo <const> = git.repo(srctop)
+        local repo <const> = git.repo(srcrepo)
 
         local kq <const> = assert(event.kqueue())
         local threads <const> = {} -- XXX: coroutines have to outlive events
