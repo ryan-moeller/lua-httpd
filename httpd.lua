@@ -1,12 +1,12 @@
 --
--- Copyright (c) 2016-2025 Ryan Moeller
+-- Copyright (c) 2016-2026 Ryan Moeller
 --
 -- SPDX-License-Identifier: ISC
 --
 
 local M = {}
 
-M.VERSION = "0.17.1"
+M.VERSION = "0.17.2"
 
 
 -- HTTP-message = start-line
@@ -214,7 +214,8 @@ end
 -- { status=404, reason="Not Found", headers={}, cookies={},
 --   body="404 Not Found" }
 function Connection:write_http_response(response)
-   local method = self.request.method
+   local request = self.request or {}
+   local method = request.method
 
    local status = response.status
    local reason = response.reason
@@ -296,10 +297,20 @@ function Connection:respond(response)
    local log = self.server.log
    local request = self.request
 
-   log:info(request.method, " ", request.path, " ", response.status, " ",
-      response.reason)
+   if request then
+      log:info(request.method, " ", request.path, " ", response.status, " ",
+         response.reason)
+   else
+      log:info("(malformed request) ", response.status, " ", response.reason)
+   end
+
    response.headers = wrap_response_fields(response.headers or {})
    self:write_http_response(response)
+
+   if not request then
+      self:close()
+      return ConnectionState.CLOSED
+   end
 
    -- HTTP/1.1 connections are keep-alive by default.
    local req_connection = request.headers["connection"]
