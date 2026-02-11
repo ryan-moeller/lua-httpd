@@ -199,6 +199,18 @@ local function all_jail_params_dict()
                 return false
             end
         },
+        ["S,mac"] = {
+            type = "mac",
+            validate = function(s)
+                for element in s:gmatch("([^,]+)") do
+                    local name, data = element:match("^([^/]+)/(.+)$")
+                    if not name or not data then
+                        return false
+                    end
+                end
+                return true
+            end
+        },
     }
     -- Some jail params are handled internally by jail(8)
     local params = {
