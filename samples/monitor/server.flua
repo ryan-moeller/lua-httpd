@@ -59,7 +59,7 @@ local function monitor(request)
               {% else %}
                 <abbr title="{{field[1]}}">{{field[2]}}</abbr>
               {% end %}
-              </th>  
+              </th>
             {% end %}
             </tr>
           </thead>
@@ -67,7 +67,9 @@ local function monitor(request)
           {% for _, row in ipairs(rows()) do %}
             <tr>
             {% for _, field in ipairs(cols) do %}
-              <td>{{row[(field[1])]}}</td>
+              <td style="overflow-x: auto; max-width: 50vw">
+                {{row[(field[1])]}}
+              </td>
             {% end %}
             </tr>
           {% end %}
