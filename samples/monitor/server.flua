@@ -91,7 +91,9 @@ local function monitor(request)
     <div class="columns is-centered">
       <div class="column is-narrow">
 
-        <h1 class="title"><span class="has-text-danger">FreeBSD</span> Monitor</h1>
+        <section class="section">
+          <h1 class="title"><span class="has-text-danger">FreeBSD</span> Monitor</h1>
+        </section>
         {% for _, table in ipairs(tables) do %}
           {*table*}
         {% end %}
