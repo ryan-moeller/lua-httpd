@@ -17,8 +17,21 @@ _M.basedir = "/system"
 _M.snapshots_site = "https://download.freebsd.org/ftp/snapshots"
 _M.arch = sysctl.sysctl("hw.machine"):value()
 _M.branch = sysctl.sysctl("kern.osrelease"):value()
-_M.distributions = {"kernel.txz", "kernel-dbg.txz", "base.txz", "base-dbg.txz", "src.txz"}
-_M.config_files = {"passwd", "group", "master.passwd", "services", "inetd.conf"}
+_M.distributions = {
+    "base.txz",
+    "base-dbg.txz",
+    "kernel.txz",
+    "kernel-dbg.txz",
+    "src.txz",
+}
+_M.config_files = {
+    "group",
+    "hosts",
+    "inetd.conf",
+    "master.passwd",
+    "passwd",
+    "services",
+}
 
 local function snapshot_file_url(path)
     return table.concat({_M.snapshots_site, _M.arch, _M.branch, path}, "/")
