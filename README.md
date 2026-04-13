@@ -185,7 +185,7 @@ For example, using `lua54` installed from [MacPorts](https://www.macports.org):
   <dict>
    <key>Listeners</key>
    <dict>
-    <key>SocketServiceName</key>
+    <key>SockServiceName</key>
     <string>8080</string>
    </dict>
   </dict>
