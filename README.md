@@ -163,7 +163,7 @@ details.
 
 For example, using `lua54` installed from [MacPorts](https://www.macports.org):
 
-`com.example.server.plist`
+`~/Library/LaunchAgents/com.example.server.plist`
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -176,6 +176,8 @@ For example, using `lua54` installed from [MacPorts](https://www.macports.org):
    <string>/opt/local/bin/lua5.4</string>
    <string>server.lua</string>
   </array>
+  <key>StandardErrorPath</key>
+  <string>/Users/ryan/Library/Logs/com.example.server.err.log</string>
   <key>inetdCompatibility</key>
   <dict>
    <key>Wait</key>
@@ -186,7 +188,7 @@ For example, using `lua54` installed from [MacPorts](https://www.macports.org):
    <key>Listeners</key>
    <dict>
     <key>SockServiceName</key>
-    <string>8080</string>
+    <integer>8080</integer>
    </dict>
   </dict>
  </dict>
@@ -194,8 +196,11 @@ For example, using `lua54` installed from [MacPorts](https://www.macports.org):
 ```
 
 ```sh
-launchctl load com.example.server.plist
+launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.example.server.plist
 ```
+
+Note: Adjust `StandardErrorPath` for your username or omit the key/value pair
+and configure logging elsewhere in the server.
 
 ### systemd
 
