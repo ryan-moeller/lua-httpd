@@ -6,7 +6,7 @@
 
 local M = {}
 
-M.VERSION = "0.17.2"
+M.VERSION = "0.17.3"
 
 
 -- HTTP-message = start-line
@@ -1572,7 +1572,7 @@ function Connection:set_cookies(cookie)
    local pos = 1
    local valid = false
    -- Cookie header is only allowed to appear once.  Ignore repeats.
-   if #self.cookies > 0 then
+   if self.cookies ~= nil then
       goto check_valid
    end
    while pos <= #cookie do
