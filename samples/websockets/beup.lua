@@ -30,7 +30,9 @@ _M.config_files = {
     "inetd.conf",
     "master.passwd",
     "passwd",
+    "pf.conf",
     "services",
+    "sysctl.conf",
 }
 
 local function snapshot_file_url(path)
