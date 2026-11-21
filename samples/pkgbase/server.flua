@@ -15,7 +15,7 @@ local srcrepo <const> = "/home/ryan/src"
 local makeenv <const> = {
     MAKEOBJDIRPREFIX = "/usr/obj",
     CCACHE_BASEDIR="/home/ryan",
-    CCACHE_DIR = "/storage/ccache",
+    CCACHE_DIR = "/scratch/ccache",
 }
 local makevars <const> = {
     -- KERNCONF = "GENERIC-KTR",
